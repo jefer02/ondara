@@ -1,5 +1,7 @@
 package app.ondara.core.designsystem.icon
 
+import app.ondara.core.designsystem.theme.IconStyle
+import app.ondara.core.designsystem.theme.LocalIconStyle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -21,8 +23,9 @@ import app.ondara.core.designsystem.theme.LocalContentColor
 /** Dibuja un icono de [OndaraIcons] con el color de contenido actual. */
 @Composable
 fun Icon(icon: ImageVector, contentDescription: String?, modifier: Modifier = Modifier, tint: Color = Color.Unspecified, size: Dp = 24.dp) {
+    val resolved = if (LocalIconStyle.current == IconStyle.HAND_DRAWN) HandDrawnIcons.replacement(icon) else icon
     Image(
-        imageVector = icon,
+        imageVector = resolved,
         contentDescription = contentDescription,
         modifier = modifier.size(size),
         colorFilter = ColorFilter.tint(tint.takeOrElse { LocalContentColor.current }),
@@ -266,6 +269,98 @@ object OndaraIcons {
     val Wave by lazy {
         build("Wave") {
             stroke(2.2f) { moveTo(3f, 12f); curveTo(5f, 6f, 7f, 6f, 9f, 12f); curveTo(11f, 18f, 13f, 18f, 15f, 12f); curveTo(16.5f, 7.5f, 18.5f, 7.5f, 21f, 12f) }
+        }
+    }
+
+    // ---- v2 ----
+    val News by lazy {
+        build("News") { stroke { roundRect(4f, 4f, 6.5f, 6.5f, 1.6f); roundRect(13.5f, 4f, 6.5f, 6.5f, 1.6f); roundRect(4f, 13.5f, 6.5f, 6.5f, 1.6f); roundRect(13.5f, 13.5f, 6.5f, 6.5f, 1.6f) } }
+    }
+    val Info by lazy {
+        build("Info") {
+            stroke { circle(12f, 12f, 8.5f); line(12f, 11f, 12f, 16.2f) }
+            fill { circle(12f, 7.9f, 1.2f) }
+        }
+    }
+    private fun PathBuilder.star() {
+        moveTo(12f, 3.6f); lineTo(14.5f, 9f); lineTo(20.4f, 9.7f); lineTo(16f, 13.7f); lineTo(17.2f, 19.6f)
+        lineTo(12f, 16.6f); lineTo(6.8f, 19.6f); lineTo(8f, 13.7f); lineTo(3.6f, 9.7f); lineTo(9.5f, 9f); close()
+    }
+    val Star by lazy { build("Star") { stroke { star() } } }
+    val StarFilled by lazy { build("StarFilled") { fill { star() }; stroke { star() } } }
+    val Pin by lazy {
+        build("Pin") { stroke { moveTo(9f, 4f); lineTo(15f, 4f); lineTo(14.2f, 10f); lineTo(17.5f, 13.5f); lineTo(6.5f, 13.5f); lineTo(9.8f, 10f); close(); line(12f, 13.5f, 12f, 20.5f) } }
+    }
+    val Cast by lazy {
+        build("Cast") {
+            stroke {
+                moveTo(4f, 9f); lineTo(4f, 7f); arcTo(2f, 2f, 0f, false, true, 6f, 5f); lineTo(18f, 5f); arcTo(2f, 2f, 0f, false, true, 20f, 7f)
+                lineTo(20f, 17f); arcTo(2f, 2f, 0f, false, true, 18f, 19f); lineTo(13.5f, 19f)
+                moveTo(4f, 12.5f); arcTo(6.5f, 6.5f, 0f, false, true, 10.5f, 19f)
+                moveTo(4f, 16f); arcTo(3f, 3f, 0f, false, true, 7f, 19f)
+            }
+            fill { circle(4.3f, 18.7f, 0.9f) }
+        }
+    }
+    val Video by lazy {
+        build("Video") {
+            stroke { roundRect(3.5f, 5.5f, 17f, 13f, 2.5f) }
+            fill { moveTo(10.2f, 9.2f); lineTo(15f, 12f); lineTo(10.2f, 14.8f); close() }
+        }
+    }
+    val Note by lazy {
+        build("Note") {
+            stroke { moveTo(9.5f, 17.5f); lineTo(9.5f, 5.5f); lineTo(18.5f, 4f); lineTo(18.5f, 15.5f) }
+            fill { circle(7.3f, 17.5f, 2.4f); circle(16.3f, 15.5f, 2.4f) }
+        }
+    }
+    val Mic by lazy {
+        build("Mic") { stroke { roundRect(9f, 3.5f, 6f, 10.5f, 3f); moveTo(5.5f, 11.5f); curveTo(5.5f, 19f, 18.5f, 19f, 18.5f, 11.5f); line(12f, 17.2f, 12f, 20.5f) } }
+    }
+    val Link by lazy {
+        build("Link") {
+            stroke {
+                moveTo(10.5f, 13.5f); curveTo(12.2f, 15.2f, 14.4f, 15.2f, 16f, 13.6f); lineTo(19f, 10.6f); curveTo(22.2f, 7.2f, 17f, 2f, 13.6f, 5.2f); lineTo(12.4f, 6.4f)
+                moveTo(13.5f, 10.5f); curveTo(11.8f, 8.8f, 9.6f, 8.8f, 8f, 10.4f); lineTo(5f, 13.4f); curveTo(1.8f, 16.8f, 7f, 22f, 10.4f, 18.8f); lineTo(11.6f, 17.6f)
+            }
+        }
+    }
+    val Sync by lazy {
+        build("Sync") {
+            stroke {
+                moveTo(19.5f, 11f); arcTo(7.6f, 7.6f, 0f, false, false, 5.6f, 8f); moveTo(5f, 4.2f); lineTo(5.4f, 8.2f); lineTo(9.4f, 7.8f)
+                moveTo(4.5f, 13f); arcTo(7.6f, 7.6f, 0f, false, false, 18.4f, 16f); moveTo(19f, 19.8f); lineTo(18.6f, 15.8f); lineTo(14.6f, 16.2f)
+            }
+        }
+    }
+    val Translate by lazy {
+        build("Translate") {
+            stroke(1.8f) {
+                line(3.5f, 6.5f, 12.5f, 6.5f); line(8f, 4.5f, 8f, 6.5f); moveTo(10.8f, 6.5f); curveTo(10f, 10f, 7.5f, 12.6f, 4f, 14f)
+                moveTo(5.8f, 9f); curveTo(7f, 11.5f, 9f, 13f, 11f, 13.8f); moveTo(12.5f, 20f); lineTo(16.3f, 11f); lineTo(20.1f, 20f); line(13.9f, 17f, 18.7f, 17f)
+            }
+        }
+    }
+    val Speed by lazy { build("Speed") { stroke { moveTo(4f, 17f); arcTo(8.5f, 8.5f, 0f, true, true, 20f, 17f); line(12f, 13f, 16f, 8.5f) } } }
+    val YouTube by lazy {
+        build("YouTube") {
+            stroke { roundRect(3f, 6f, 18f, 12f, 4f) }
+            fill { moveTo(10.2f, 9.3f); lineTo(14.9f, 12f); lineTo(10.2f, 14.7f); close() }
+        }
+    }
+    val Spotify by lazy {
+        build("Spotify") {
+            stroke { circle(12f, 12f, 9f) }
+            stroke(1.8f) {
+                moveTo(7.2f, 9.6f); curveTo(10.6f, 8.5f, 14.4f, 8.9f, 17.2f, 10.5f)
+                moveTo(7.8f, 12.6f); curveTo(10.6f, 11.8f, 13.6f, 12.1f, 16f, 13.5f)
+                moveTo(8.5f, 15.4f); curveTo(10.6f, 14.8f, 12.8f, 15f, 14.8f, 16.1f)
+            }
+        }
+    }
+    val Camera by lazy {
+        build("Camera") {
+            stroke { moveTo(8.5f, 6.5f); lineTo(10f, 4.5f); lineTo(14f, 4.5f); lineTo(15.5f, 6.5f); roundRect(3.5f, 6.5f, 17f, 13f, 2.5f); circle(12f, 13f, 3.4f) }
         }
     }
 }

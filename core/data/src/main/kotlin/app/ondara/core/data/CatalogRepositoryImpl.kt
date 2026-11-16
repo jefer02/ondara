@@ -23,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import app.ondara.core.model.MoodCategory
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.KSerializer
@@ -73,6 +75,39 @@ class CatalogRepositoryImpl @Inject constructor(
         if (query.isBlank()) emptyList() else runCatching { innerTube.suggestions(query) }.getOrDefault(emptyList())
 
     override suspend fun radio(videoId: String, playlistId: String?): List<Song> = innerTube.next(videoId, playlistId)
+
+    /** Explorar + listas de éxitos + lanzamientos; las estanterías repetidas (mismo título) se descartan. */
+    override fun news(forceRefresh: Boolean): Flow<Resource<List<HomeShelf>>> =
+        cached("news", ListSerializer(HomeShelf.serializer()), HOME_TTL_MS, forceRefresh) {
+            coroutineScope {
+                val explore = async { runCatching { innerTube.explore() }.getOrDefault(emptyList()) }
+                val releases = async { runCatching { innerTube.newReleases() }.getOrDefault(emptyList()) }
+                val charts = async { runCatching { innerTube.charts() }.getOrDefault(emptyList()) }
+                val home = async { runCatching { innerTube.home(continuations = 0) }.getOrDefault(emptyList()) }
+                val all = (releases.await() + explore.await() + charts.await() + home.await()).filter { it.items.isNotEmpty() }
+                check(all.isNotEmpty()) { "Sin conexión" }
+                all.distinctBy { it.title.lowercase() }
+            }
+        }
+
+    override fun moods(): Flow<Resource<List<MoodCategory>>> =
+        cached("moods", ListSerializer(MoodCategory.serializer()), PAGE_TTL_MS, false) { innerTube.moods() }
+
+    override suspend fun moodArtwork(mood: MoodCategory): String? = withContext(Dispatchers.IO) {
+        val key = "moodart:${mood.browseId}:${mood.params}"
+        cache.page(key)?.let { return@withContext it.json.ifEmpty { null } }
+        val shelves = runCatching { innerTube.moodShelves(mood.browseId, mood.params) }.getOrNull() ?: return@withContext null
+        val url = shelves.asSequence().flatMap { it.items }.firstNotNullOfOrNull { item ->
+            when (item) {
+                is MusicItem.PlaylistItem -> item.playlist.thumbnailUrl
+                is MusicItem.AlbumItem -> item.album.thumbnailUrl
+                is MusicItem.SongItem -> item.song.thumbnailUrl
+                is MusicItem.ArtistItem -> null
+            }
+        }
+        cache.putPage(PageCacheEntity(key, url.orEmpty(), System.currentTimeMillis()))
+        url
+    }
 
     private fun <T> cached(
         key: String,

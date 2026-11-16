@@ -29,6 +29,34 @@ data class ResolvedStream(
 
 enum class RepeatMode { OFF, ALL, ONE }
 
+/** Origen de la cola en curso: [type] es "Playlist", "Álbum", "Radio", "Artista"… y [title] su nombre. */
+data class PlaybackContext(val type: String, val title: String)
+
+enum class VideoStatus {
+    /** Sin vídeo activo (controlador detenido). */
+    IDLE,
+
+    /** Resolviendo o cargando el vídeo de la canción actual. */
+    LOADING,
+
+    /** Hay vídeo y ya se pintó su primer fotograma. */
+    READY,
+
+    /** La canción no tiene vídeo utilizable (o no hay Wi-Fi): la interfaz muestra la portada. */
+    UNAVAILABLE,
+}
+
+/** Estado del vídeo de fondo del layout "Cine". */
+data class VideoBackgroundState(
+    val status: VideoStatus = VideoStatus.IDLE,
+    /** Canción a la que corresponde el vídeo cargado. */
+    val songId: String? = null,
+    val width: Int = 0,
+    val height: Int = 0,
+    /** `true` en modo "vídeo completo": el vídeo suena con su propio audio y el reproductor de audio queda en pausa. */
+    val videoMode: Boolean = false,
+)
+
 /** Estado observable del reproductor, compartido por todas las pantallas. */
 data class PlayerState(
     val queue: List<Song> = emptyList(),
@@ -41,6 +69,8 @@ data class PlayerState(
     /** Fin del temporizador de sueño (epoch ms) o `null`. */
     val sleepTimerEndsAtMs: Long? = null,
     val error: String? = null,
+    /** Desde dónde se lanzó la cola ("Reproduciendo desde Playlist · Radio de blue"). */
+    val context: PlaybackContext? = null,
 ) {
     val current: Song? get() = queue.getOrNull(currentIndex)
     val hasNext: Boolean get() = currentIndex in 0 until queue.lastIndex

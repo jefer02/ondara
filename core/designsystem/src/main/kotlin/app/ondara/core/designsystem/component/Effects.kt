@@ -42,7 +42,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
@@ -324,4 +326,89 @@ fun ThemeTransitionHost(
     ) {
         content()
     }
+}
+
+private const val DITHER_SHADER = """
+uniform shader content;
+uniform float cell;
+uniform float amount;
+layout(color) uniform half4 ink;
+layout(color) uniform half4 paper;
+
+// Matriz de Bayer 4x4 generada aritméticamente (AGSL no permite indexar arrays con valores no constantes).
+float bayer2(float2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float bayer4(float2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+
+half4 main(float2 p) {
+    float2 block = floor(p / cell);
+    half4 c = content.eval((block + 0.5) * cell);
+    half4 original = content.eval(p);
+    float l = dot(c.rgb, half3(0.299, 0.587, 0.114));
+    // Algo de contraste antes de umbralizar: las portadas oscuras no quedan en una mancha.
+    l = clamp((l - 0.5) * 1.25 + 0.54, 0.0, 1.0);
+    float threshold = bayer4(block) + 0.03125;
+    half3 tone = l > threshold ? paper.rgb : ink.rgb;
+    return half4(mix(original.rgb, tone * original.a, amount), original.a);
+}
+"""
+
+/**
+ * Tramado ordenado de 1 bit (**Bayer 4×4**) a dos tonos, como una ilustración impresa: cada celda
+ * de [cellDp] toma [ink] o [paper] comparando su luminancia con el umbral de la matriz.
+ *
+ * - API 33+: `RuntimeShader` AGSL aplicado como `RenderEffect` de la capa. O(1) por píxel, en GPU.
+ * - API < 33: matriz de color (escala de grises de contraste alto teñida entre los dos tonos).
+ *
+ * [amount] 0..1 mezcla con la imagen original (1 = tramado completo); se lee en la fase de dibujo,
+ * así el fundido a color de la portada en reproducción no recompone.
+ */
+fun Modifier.twoToneDither(ink: Color, paper: Color, cellDp: Float = 2f, amount: () -> Float = { 1f }): Modifier = composed {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val shader = remember { RuntimeShader(DITHER_SHADER) }
+        graphicsLayer {
+            val a = amount().coerceIn(0f, 1f)
+            if (a <= 0.001f) {
+                renderEffect = null
+            } else {
+                shader.setFloatUniform("cell", cellDp * density)
+                shader.setFloatUniform("amount", a)
+                shader.setColorUniform("ink", ink.toArgb())
+                shader.setColorUniform("paper", paper.toArgb())
+                renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+            }
+            clip = true
+        }
+    } else {
+        drawWithContent {
+            val a = amount().coerceIn(0f, 1f)
+            drawContent()
+            if (a > 0.001f) {
+                val paint = androidx.compose.ui.graphics.Paint().apply {
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(twoToneMatrix(ink, paper))
+                    alpha = a
+                }
+                drawIntoCanvas { canvas ->
+                    canvas.saveLayer(Rect(Offset.Zero, size), paint)
+                    drawContent()
+                    canvas.restore()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Matriz 4×5 que lleva la luminancia (con contraste ×1,8) a la recta entre [ink] y [paper].
+ * Es la versión sin shader del tramado, para API < 33.
+ */
+internal fun twoToneMatrix(ink: Color, paper: Color): androidx.compose.ui.graphics.ColorMatrix {
+    val contrast = 1.8f
+    val lr = 0.299f * contrast
+    val lg = 0.587f * contrast
+    val lb = 0.114f * contrast
+    val bias = (0.5f - 0.5f * contrast) * 255f
+    fun row(i: Float, p: Float) = floatArrayOf((p - i) * lr, (p - i) * lg, (p - i) * lb, 0f, i * 255f + (p - i) * bias)
+    return androidx.compose.ui.graphics.ColorMatrix(
+        row(ink.red, paper.red) + row(ink.green, paper.green) + row(ink.blue, paper.blue) + floatArrayOf(0f, 0f, 0f, 1f, 0f),
+    )
 }

@@ -51,7 +51,11 @@ data class Playlist(
     val thumbnailUrl: String? = null,
     /** `true` si la playlist vive en la base de datos local (creada o importada por el usuario). */
     val isLocal: Boolean = false,
+    /** De dónde viene: creada en Ondara o traída de una cuenta conectada. */
+    val source: PlaylistSource = PlaylistSource.ONDARA,
 )
+
+enum class PlaylistSource { ONDARA, YOUTUBE, SPOTIFY }
 
 /** Cualquier cosa que puede aparecer en una estantería o en la búsqueda. */
 @Serializable

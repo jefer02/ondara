@@ -52,6 +52,21 @@ sealed interface Nav {
     data object ThemeEditor : Nav
     data object Showcase : Nav
     data object Login : Nav
+
+    // ---- v2 ----
+    /** Abre la hoja de Cuenta (avatar del encabezado). */
+    data object Account : Nav
+    data object Profile : Nav
+    data object Search : Nav
+    data object Radio : Nav
+    data object SpotifyConnect : Nav
+    data object Unmatched : Nav
+    data object Downloads : Nav
+    data object About : Nav
+    data object PlayerSettings : Nav
+
+    /** Lista de una categoría de la Biblioteca. */
+    data class LibraryCategory(val category: String) : Nav
 }
 
 /** Destino de un elemento no reproducible, o null si es una canción. */

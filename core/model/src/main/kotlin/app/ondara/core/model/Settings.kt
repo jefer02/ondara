@@ -25,4 +25,36 @@ data class UserSettings(
     val youtubeCookie: String = "",
     val contentLanguage: String = "es",
     val contentCountry: String = "CO",
-)
+    // --- v2: los campos nuevos se añaden SIEMPRE al final (el número de campo protobuf es posicional). ---
+    val profileName: String = "",
+    /** Ruta absoluta de la foto de perfil copiada a `files/`, o vacío para el avatar de iniciales. */
+    val avatarPath: String = "",
+    /** Primer arranque (epoch ms); el perfil lo muestra como "Escuchando desde". */
+    val joinedAtMs: Long = 0,
+    val onboardingDone: Boolean = false,
+    val accountsBannerDismissed: Boolean = false,
+    /** Client ID de la app que el usuario creó en Spotify for Developers (modo oficial, PKCE). */
+    val spotifyClientId: String = "",
+    /** Modo experimental de Spotify (cookie `sp_dc`); desactivado por defecto. */
+    val spotifyExperimental: Boolean = false,
+    /** Dar "Me gusta" en Ondara lo marca también en YouTube Music. */
+    val syncLikes: Boolean = false,
+    val translateLyrics: Boolean = true,
+    /** Portadas tramadas a dos tonos en los temas que lo soportan (Tinta). */
+    val ditherArtwork: Boolean = true,
+    val lastSpotifySyncMs: Long = 0,
+    /**
+     * Layout del reproductor elegido por el usuario (nombre de `PlayerLayout`), o [PLAYER_LAYOUT_THEME]
+     * para usar el del tema. En una instalación nueva es "Cine".
+     */
+    val playerLayout: String = "CINEMATIC",
+    /** Vídeo de fondo en el layout Cine. */
+    val videoBackground: Boolean = true,
+    val videoWifiOnly: Boolean = true,
+    /** Tema Tinta: tramado de dos tonos también sobre el vídeo. */
+    val ditherVideo: Boolean = true,
+) {
+    companion object {
+        const val PLAYER_LAYOUT_THEME = "THEME"
+    }
+}

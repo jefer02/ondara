@@ -1,6 +1,12 @@
 package app.ondara.core.data
 
+import app.ondara.core.domain.AccountRepository
 import app.ondara.core.domain.BackupRepository
+import app.ondara.core.domain.PersonalRepository
+import app.ondara.core.domain.SyncRepository
+import app.ondara.source.spotify.PkceAuthProvider
+import app.ondara.source.spotify.SpotifyClient
+import app.ondara.source.spotify.WebCookieAuthProvider
 import app.ondara.core.domain.CatalogRepository
 import app.ondara.core.domain.ImportRepository
 import app.ondara.core.domain.LibraryRepository
@@ -60,6 +66,12 @@ abstract class DataModule {
 
     @Binds abstract fun backup(impl: BackupRepositoryImpl): BackupRepository
 
+    @Binds abstract fun personal(impl: PersonalRepositoryImpl): PersonalRepository
+
+    @Binds abstract fun accounts(impl: AccountRepositoryImpl): AccountRepository
+
+    @Binds abstract fun sync(impl: SyncRepositoryImpl): SyncRepository
+
     companion object {
         @Provides
         @Singleton
@@ -72,10 +84,24 @@ abstract class DataModule {
 
         @Provides
         @Singleton
-        fun innerTube(http: HttpClient, settings: SettingsCache): InnerTubeClient = InnerTubeClient(http) {
+        fun innerTube(http: HttpClient, settings: SettingsCache, accounts: AccountStore): InnerTubeClient = InnerTubeClient(http) {
             val s = settings.value
-            InnerTubeConfig(s.contentLanguage, s.contentCountry, s.youtubeCookie)
+            // La sesión sale del almacén cifrado (cuenta activa), no de los ajustes.
+            InnerTubeConfig(s.contentLanguage, s.contentCountry, accounts.activeCookie)
         }
+
+        @Provides
+        @Singleton
+        fun spotifyPkce(http: HttpClient, secrets: SecretStore, settings: SettingsCache): PkceAuthProvider =
+            PkceAuthProvider(http, secrets, clientId = { settings.value.spotifyClientId.trim() })
+
+        @Provides
+        @Singleton
+        fun spotifyWebCookie(http: HttpClient, secrets: SecretStore): WebCookieAuthProvider = WebCookieAuthProvider(http, secrets)
+
+        @Provides
+        @Singleton
+        fun spotifyClient(http: HttpClient, session: dagger.Lazy<SpotifySession>): SpotifyClient = SpotifyClient(http) { session.get().provider }
 
         /** Orden = prioridad: extensión (si está configurada) → NewPipe → clientes InnerTube. */
         @Provides

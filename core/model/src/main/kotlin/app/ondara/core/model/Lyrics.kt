@@ -12,6 +12,8 @@ data class LyricLine(
     val text: String,
     /** Vacío si el proveedor solo sincroniza por línea. */
     val words: List<LyricWord> = emptyList(),
+    /** Traducción de la línea al idioma del usuario, si se pidió y existe. */
+    val translation: String? = null,
 )
 
 @Serializable

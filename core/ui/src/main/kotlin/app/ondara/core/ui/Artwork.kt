@@ -2,7 +2,11 @@ package app.ondara.core.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import app.ondara.core.designsystem.component.twoToneDither
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -33,7 +37,15 @@ private val SIZE_PARAM = Regex("""=w\d+-h\d+""")
 /** Pide a los servidores de Google la miniatura a [px] píxeles (evita descargar de más en listas). */
 fun String.thumbnail(px: Int): String = if (SIZE_PARAM.containsMatchIn(this)) SIZE_PARAM.replace(this, "=w$px-h$px") else this
 
-/** Portada con marcador de posición del tema. `contentDescription = null` cuando el texto contiguo ya la describe. */
+/** `false` si el usuario desactivó las portadas tramadas (ajuste); solo afecta a los temas que las usan. */
+val LocalDitherArtwork = staticCompositionLocalOf { true }
+
+/**
+ * Portada con marcador de posición del tema. `contentDescription = null` cuando el texto contiguo ya la describe.
+ *
+ * En los temas con `ditherArtwork` (Tinta) se pinta con el tramado de dos tonos del tema; con
+ * [playing] (la portada de lo que suena) vuelve a color con un fundido de 300 ms.
+ */
 @Composable
 fun Artwork(
     url: String?,
@@ -41,16 +53,22 @@ fun Artwork(
     shape: Shape = OndaraTheme.shapes.small,
     sizePx: Int = 240,
     contentDescription: String? = null,
+    playing: Boolean = false,
 ) {
-    Box(modifier.clip(shape).background(OndaraTheme.colors.surfaceHigh), contentAlignment = Alignment.Center) {
+    val colors = OndaraTheme.colors
+    val dither = OndaraTheme.spec.ditherArtwork && LocalDitherArtwork.current
+    Box(modifier.clip(shape).background(colors.surfaceHigh), contentAlignment = Alignment.Center) {
         if (url == null) {
-            Icon(OndaraIcons.Wave, null, tint = OndaraTheme.colors.onMuted, size = 22.dp)
+            Icon(OndaraIcons.Wave, null, tint = colors.onMuted, size = 22.dp)
         } else {
             val context = LocalContext.current
+            val amount by animateFloatAsState(if (playing) 0f else 1f, tween(300), label = "dither")
             AsyncImage(
                 model = ImageRequest.Builder(context).data(url.thumbnail(sizePx)).crossfade(true).build(),
                 contentDescription = contentDescription,
-                modifier = Modifier.matchParentSize(),
+                modifier = Modifier.matchParentSize().then(
+                    if (dither) Modifier.twoToneDither(colors.onBlock, colors.blockLight, amount = { amount }) else Modifier,
+                ),
                 contentScale = ContentScale.Crop,
             )
         }

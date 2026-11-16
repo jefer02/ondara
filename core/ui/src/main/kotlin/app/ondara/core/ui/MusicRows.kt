@@ -130,7 +130,7 @@ fun SongRow(
                 }
             } else {
                 Box {
-                    Artwork(song.thumbnailUrl, Modifier.size(52.dp), sizePx = 160)
+                    Artwork(song.thumbnailUrl, Modifier.size(52.dp), sizePx = 160, playing = current)
                     if (current) {
                         Box(Modifier.matchParentSize().clip(OndaraTheme.shapes.small).background(colors.background.copy(alpha = 0.6f)), Alignment.Center) {
                             PlayingBars(animate = now.isPlaying)
@@ -159,16 +159,20 @@ fun SongRow(
     }
 }
 
-/** Tarjeta cuadrada de carrusel (álbum, playlist, canción) o circular (artista). */
+/** Tarjeta cuadrada de carrusel (álbum, playlist, canción) o circular (artista). Los mixes llevan portada generada. */
 @Composable
-fun MusicCard(item: MusicItem, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 148.dp) {
+fun MusicCard(item: MusicItem, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 148.dp, onLongClick: (() -> Unit)? = null) {
     val (title, subtitle, image) = item.display()
     val artist = item is MusicItem.ArtistItem
     Column(
-        modifier.width(size).pressable(onClick = onClick),
+        modifier.width(size).pressable(onClick = onClick, onLongClick = onLongClick),
         horizontalAlignment = if (artist) Alignment.CenterHorizontally else Alignment.Start,
     ) {
-        Artwork(image, Modifier.size(size), shape = if (artist) CircleShape else OndaraTheme.shapes.artwork, sizePx = 360)
+        if (item is MusicItem.PlaylistItem) {
+            PlaylistCover(item.playlist, Modifier.size(size))
+        } else {
+            Artwork(image, Modifier.size(size), shape = if (artist) CircleShape else OndaraTheme.shapes.artwork, sizePx = 360)
+        }
         Spacer(Modifier.height(OndaraTheme.spacing.sm))
         Text(title, style = OndaraTheme.type.bodyStrong, maxLines = 1, textAlign = if (artist) TextAlign.Center else null)
         if (subtitle.isNotEmpty()) {
