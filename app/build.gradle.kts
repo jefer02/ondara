@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("ondara.android.application")
     id("ondara.hilt")
@@ -5,12 +7,32 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+val releaseVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val signingPropertiesFile = providers.environmentVariable("ONDARA_SIGNING_PROPERTIES")
+    .orElse("${System.getProperty("user.home")}/.config/ondara/signing/signing.properties")
+val releaseSigning = Properties().apply {
+    val source = file(signingPropertiesFile.get())
+    if (source.exists()) source.inputStream().use { load(it) }
+}
+
 android {
     namespace = "app.ondara"
     defaultConfig {
         applicationId = "app.ondara"
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseVersion.getProperty("versionCode").toInt()
+        versionName = releaseVersion.getProperty("versionName")
+    }
+    signingConfigs {
+        create("release") {
+            if (releaseSigning.isNotEmpty()) {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         debug { applicationIdSuffix = ".debug" }
@@ -18,8 +40,7 @@ android {
             // R8 queda desactivado hasta poder validar las reglas keep (NewPipe/Rhino, Ktor) en un dispositivo.
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sin keystore en el repo: se firma con la clave debug.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         // Variante que mide :benchmark (release no depurable + perfilable).
         create("benchmark") {

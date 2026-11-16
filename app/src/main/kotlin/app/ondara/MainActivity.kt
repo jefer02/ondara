@@ -149,6 +149,7 @@ private fun OndaraRoot(viewModel: AppViewModel = hiltViewModel()) {
                 LocalThemeTransition provides transition,
             ) {
                 AppScaffold(theme, state)
+                AppUpdatePrompt()
             }
         }
     }

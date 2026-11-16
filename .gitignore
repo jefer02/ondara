@@ -7,3 +7,8 @@ local.properties
 captures/
 *.keystore
 *.jks
+
+# Credenciales de firma locales
+signing.properties
+contraseña.txt
+contrasena.txt

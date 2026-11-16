@@ -1,0 +1,70 @@
+name: Release Android
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Instalar SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validar versión y etiqueta
+        run: python3 scripts/validate-release.py "$GITHUB_REF_NAME"
+      - name: Preparar firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          folder = Path(os.environ['RUNNER_TEMP']) / 'ondara-signing'
+          folder.mkdir(mode=0o700)
+          for name in ['KEYSTORE_BASE64', 'STORE_PASSWORD', 'KEY_PASSWORD', 'KEY_ALIAS']:
+              if not os.environ.get(name):
+                  raise SystemExit(f'Falta el secreto {name}')
+          key = folder / 'release.jks'
+          key.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'], validate=True))
+          properties = folder / 'signing.properties'
+          properties.write_text(f'storeFile={key}\nstorePassword={os.environ["STORE_PASSWORD"]}\nkeyPassword={os.environ["KEY_PASSWORD"]}\nkeyAlias={os.environ["KEY_ALIAS"]}\n')
+          for file in folder.iterdir():
+              file.chmod(0o600)
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'ONDARA_SIGNING_PROPERTIES={properties}\n')
+          PY
+      - name: Validar y compilar APK firmado
+        run: ./gradlew :app:detekt :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          cp app/build/outputs/apk/release/app-release.apk "dist/Ondara-$VERSION.apk"
+          cd dist
+          sha256sum "Ondara-$VERSION.apk" > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" "Ondara-$VERSION.apk" SHA256SUMS.txt --verify-tag --title "Ondara $VERSION" --generate-notes
+      - name: Eliminar firma temporal
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ondara-signing"

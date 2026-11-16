@@ -82,3 +82,32 @@ Ondara no copia código de otros proyectos, pero se apoya en sus ideas y en su t
 ## Licencia
 
 [GPL-3.0](LICENSE).
+
+## Instalar y actualizar desde GitHub
+
+Descarga el APK de [Releases](https://github.com/jefer02/ondara/releases/latest).
+La edición release consulta la última versión estable de GitHub al abrir la app y muestra
+un aviso si hay un APK más reciente. «Descargar» abre el navegador; abre el APK descargado
+y confirma la instalación en Android (permite instalar desde ese navegador si Android lo solicita).
+Sin conexión o si GitHub limita las consultas, la app continúa normalmente y reintenta en la
+siguiente apertura. No instala silenciosamente ni busca actualizaciones en la edición debug.
+
+### Publicar otra versión
+
+1. Cambia `version.properties`: por ejemplo, `versionName=0.1.1` y `versionCode=1001`.
+   El código es `major * 1000000 + minor * 1000 + patch`; cada componente va de 0 a 999.
+   La nueva versión debe ser mayor que todas las ya publicadas.
+2. Confirma y sube los cambios a GitHub.
+3. Crea y sube la etiqueta correspondiente: `git tag v0.1.1` y `git push origin v0.1.1`.
+4. El workflow **Release Android** valida, compila, firma y publica el APK junto con su SHA-256.
+   Un commit sin etiqueta no publica una versión. Para reintentar un fallo, usa el workflow
+   manual seleccionando la etiqueta; una publicación existente no se sobrescribe.
+
+Los secretos de Actions son `ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`,
+`ANDROID_KEY_PASSWORD` y `ANDROID_KEY_ALIAS`. La clave debe conservarse para todas las versiones.
+Para compilar localmente, Gradle lee `~/.config/ondara/signing/signing.properties`, o la ruta
+indicada por `ONDARA_SIGNING_PROPERTIES`, con `storeFile`, `storePassword`, `keyAlias` y `keyPassword`.
+`./gradlew :app:assembleRelease` genera el APK firmado; nunca utiliza la firma debug como reemplazo.
+Guarda una copia privada de la clave y su contraseña; no las añadas al repositorio.
+Una instalación antigua de `app.ondara` firmada con otra clave no puede actualizarse con esta firma:
+es necesario desinstalarla primero (se pierden sus datos locales). La edición `.debug` puede coexistir.
