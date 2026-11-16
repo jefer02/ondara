@@ -1,0 +1,10 @@
+<resources>
+    <string name="widget_label">Ondara</string>
+    <string name="widget_description">Controla la reproducción desde la pantalla de inicio.</string>
+    <string name="widget_idle">Nada en reproducción</string>
+    <string name="widget_previous">Anterior</string>
+    <string name="widget_play_pause">Reproducir o pausar</string>
+    <string name="widget_next">Siguiente</string>
+    <string name="download_channel">Descargas</string>
+    <string name="download_title">Descargando música</string>
+</resources>
