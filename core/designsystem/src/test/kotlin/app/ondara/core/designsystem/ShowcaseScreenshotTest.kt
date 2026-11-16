@@ -34,6 +34,6 @@ class ShowcaseScreenshotTest(private val themeId: String) {
     companion object {
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
-        fun themes() = listOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico")
+        fun themes() = listOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico", "tinta")
     }
 }

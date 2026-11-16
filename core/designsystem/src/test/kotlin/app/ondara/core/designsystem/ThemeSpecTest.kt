@@ -1,5 +1,11 @@
 package app.ondara.core.designsystem
 
+import androidx.compose.ui.graphics.toArgb
+import app.ondara.core.designsystem.icon.HandDrawnIcons
+import app.ondara.core.designsystem.icon.OndaraIcons
+import app.ondara.core.designsystem.theme.FontToken
+import app.ondara.core.designsystem.theme.IconStyle
+import app.ondara.core.designsystem.theme.toColors
 import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.NavStyle
 import app.ondara.core.designsystem.theme.PlayerLayout
@@ -16,8 +22,42 @@ class ThemeSpecTest {
         File("src/main/assets/themes").listFiles { f -> f.extension == "json" }!!.map { ThemeJson.decode(it.readText()) }
 
     @Test
-    fun `six built-in themes load from json`() {
-        assertEquals(setOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico"), themes.map { it.id }.toSet())
+    fun `seven built-in themes load from json`() {
+        assertEquals(setOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico", "tinta"), themes.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `tinta is matte, bento, hand drawn and dithered`() {
+        val tinta = themes.first { it.id == "tinta" }
+        assertEquals(0, tinta.materials.blur)
+        assertEquals(PlayerLayout.BENTO, tinta.playerLayout)
+        assertEquals(IconStyle.HAND_DRAWN, tinta.icons)
+        assertTrue(tinta.ditherArtwork)
+        assertEquals(FontToken.ROUNDED, tinta.typography.display)
+        assertEquals("#06080F", tinta.colors.dark.background)
+        assertTrue(tinta.shapes.medium in 24..28 && tinta.shapes.large in 24..28)
+    }
+
+    @Test
+    fun `bento blocks keep AA text contrast in every theme`() {
+        for (theme in themes) {
+            for (palette in listOfNotNull(theme.colors.dark, theme.colors.light)) {
+                val c = palette.toColors()
+                fun ratio(fg: androidx.compose.ui.graphics.Color, bg: androidx.compose.ui.graphics.Color) =
+                    ColorMath.contrast(fg.toArgb(), bg.toArgb())
+                assertTrue(ratio(c.onBlock, c.blockPrimary) >= 4.5, "onBlock/blockPrimary en ${theme.id}")
+                assertTrue(ratio(c.onBlock, c.blockLight) >= 4.5, "onBlock/blockLight en ${theme.id}")
+                assertTrue(ratio(c.onBlockMuted, c.blockMuted) >= 4.5, "onBlockMuted/blockMuted en ${theme.id}")
+            }
+        }
+    }
+
+    @Test
+    fun `hand drawn set replaces navigation and playback icons by name`() {
+        for (icon in listOf(OndaraIcons.Home, OndaraIcons.News, OndaraIcons.Radio, OndaraIcons.Library, OndaraIcons.Search, OndaraIcons.Play, OndaraIcons.Pause, OndaraIcons.Next, OndaraIcons.Previous)) {
+            assertTrue(HandDrawnIcons.replacement(icon) !== icon, "falta versión a mano de ${icon.name}")
+        }
+        assertTrue(HandDrawnIcons.replacement(OndaraIcons.Equalizer) === OndaraIcons.Equalizer)
     }
 
     @Test
@@ -32,7 +72,8 @@ class ThemeSpecTest {
     @Test
     fun `themes differ in more than color`() {
         assertTrue(themes.map { it.navigation }.toSet().containsAll(NavStyle.entries))
-        assertTrue(themes.map { it.playerLayout }.toSet().containsAll(PlayerLayout.entries))
+        // CINEMATIC no pertenece a ningún tema: es la elección por defecto del usuario.
+        assertTrue(themes.map { it.playerLayout }.toSet().containsAll(PlayerLayout.entries - PlayerLayout.CINEMATIC))
         assertTrue(themes.map { it.typography.display }.distinct().size >= 4)
         assertTrue(themes.map { it.shapes }.distinct().size == themes.size)
         assertTrue(themes.map { it.motion }.distinct().size >= 5)
