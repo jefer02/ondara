@@ -1,0 +1,62 @@
+{
+  "id": "ondara",
+  "name": "Ondara",
+  "description": "Azul petróleo profundo, coral y vidrio flotante.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": false,
+    "dark": {
+      "background": "#071A20",
+      "surface": "#0E2830",
+      "surfaceHigh": "#153640",
+      "onBackground": "#EAF4F4",
+      "onMuted": "#9DB8BC",
+      "accent": "#FF6B57",
+      "onAccent": "#1A0A07",
+      "outline": "#24454E",
+      "error": "#FF5A5F"
+    }
+  },
+  "typography": {
+    "display": "GROTESK",
+    "body": "INTER",
+    "mono": "MONO",
+    "displayWeight": 700,
+    "titleWeight": 600,
+    "bodyWeight": 400,
+    "scale": 1.0,
+    "displayTracking": -0.03,
+    "uppercaseLabels": false
+  },
+  "shapes": {
+    "small": 12,
+    "medium": 20,
+    "large": 30,
+    "artwork": 24,
+    "squircle": false,
+    "pillControls": true
+  },
+  "materials": {
+    "blur": 28,
+    "surfaceOpacity": 0.55,
+    "saturation": 1.4,
+    "hairline": true,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 380,
+    "dampingRatio": 0.8,
+    "fastMs": 150,
+    "mediumMs": 300,
+    "slowMs": 500,
+    "pressScale": 0.95,
+    "staggerMs": 30
+  },
+  "playerLayout": "ARTWORK_HERO",
+  "navigation": "FLOATING_GLASS_PILL",
+  "background": "MESH_GRADIENT",
+  "list": "PLAIN",
+  "largeTitles": false,
+  "accentPulse": false,
+  "grain": 0.0
+}

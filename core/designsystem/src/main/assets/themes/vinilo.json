@@ -1,0 +1,62 @@
+{
+  "id": "vinilo",
+  "name": "Vinilo",
+  "description": "Cálido, con grano y un disco que gira.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": false,
+    "dark": {
+      "background": "#1E1611",
+      "surface": "#2A1F17",
+      "surfaceHigh": "#3A2B20",
+      "onBackground": "#F3E7D3",
+      "onMuted": "#BCA68A",
+      "accent": "#E0A458",
+      "onAccent": "#24160A",
+      "outline": "#4A382A",
+      "error": "#F0816A"
+    }
+  },
+  "typography": {
+    "display": "SERIF",
+    "body": "INTER",
+    "mono": "MONO",
+    "displayWeight": 600,
+    "titleWeight": 600,
+    "bodyWeight": 400,
+    "scale": 1.02,
+    "displayTracking": -0.01,
+    "uppercaseLabels": false
+  },
+  "shapes": {
+    "small": 8,
+    "medium": 14,
+    "large": 22,
+    "artwork": 10,
+    "squircle": false,
+    "pillControls": true
+  },
+  "materials": {
+    "blur": 12,
+    "surfaceOpacity": 0.85,
+    "saturation": 1.1,
+    "hairline": false,
+    "noise": 0.5
+  },
+  "motion": {
+    "stiffness": 200,
+    "dampingRatio": 0.74,
+    "fastMs": 180,
+    "mediumMs": 380,
+    "slowMs": 650,
+    "pressScale": 0.95,
+    "staggerMs": 40
+  },
+  "playerLayout": "VINYL",
+  "navigation": "BOTTOM_BAR",
+  "background": "SOLID",
+  "list": "CARDS",
+  "largeTitles": false,
+  "accentPulse": false,
+  "grain": 0.55
+}

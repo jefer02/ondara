@@ -1,0 +1,73 @@
+{
+  "id": "cupertino",
+  "name": "Cupertino",
+  "description": "Inspirado en Apple Music: títulos grandes, squircles y vidrio.",
+  "colors": {
+    "mode": "SYSTEM",
+    "dynamic": false,
+    "dark": {
+      "background": "#000000",
+      "surface": "#1C1C1E",
+      "surfaceHigh": "#2C2C2E",
+      "onBackground": "#FFFFFF",
+      "onMuted": "#A1A1A6",
+      "accent": "#FF4F66",
+      "onAccent": "#1A0006",
+      "outline": "#38383A",
+      "error": "#FF5A5F"
+    },
+    "light": {
+      "background": "#FFFFFF",
+      "surface": "#F2F2F7",
+      "surfaceHigh": "#E5E5EA",
+      "onBackground": "#000000",
+      "onMuted": "#636366",
+      "accent": "#D91A3C",
+      "onAccent": "#FFFFFF",
+      "outline": "#C6C6C8",
+      "error": "#C4001D"
+    }
+  },
+  "typography": {
+    "display": "INTER",
+    "body": "INTER",
+    "mono": "INTER",
+    "displayWeight": 800,
+    "titleWeight": 700,
+    "bodyWeight": 400,
+    "scale": 1.04,
+    "displayTracking": -0.025,
+    "uppercaseLabels": false
+  },
+  "shapes": {
+    "small": 10,
+    "medium": 16,
+    "large": 26,
+    "artwork": 14,
+    "squircle": true,
+    "pillControls": false
+  },
+  "materials": {
+    "blur": 40,
+    "surfaceOpacity": 0.72,
+    "saturation": 1.8,
+    "hairline": true,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 300,
+    "dampingRatio": 0.86,
+    "fastMs": 180,
+    "mediumMs": 350,
+    "slowMs": 550,
+    "pressScale": 0.97,
+    "staggerMs": 30
+  },
+  "playerLayout": "IMMERSIVE",
+  "navigation": "BOTTOM_BAR",
+  "background": "BLURRED_ART",
+  "list": "SEPARATORS",
+  "largeTitles": true,
+  "accentPulse": false,
+  "grain": 0.0
+}

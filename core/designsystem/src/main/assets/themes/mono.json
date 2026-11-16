@@ -1,0 +1,62 @@
+{
+  "id": "mono",
+  "name": "Mono",
+  "description": "Monocromo de alto contraste, matriz de puntos y un único rojo.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": false,
+    "dark": {
+      "background": "#000000",
+      "surface": "#0D0D0D",
+      "surfaceHigh": "#1A1A1A",
+      "onBackground": "#FFFFFF",
+      "onMuted": "#9A9A9A",
+      "accent": "#FF3B30",
+      "onAccent": "#000000",
+      "outline": "#333333",
+      "error": "#FF3B30"
+    }
+  },
+  "typography": {
+    "display": "DOT",
+    "body": "GROTESK",
+    "mono": "DOT",
+    "displayWeight": 800,
+    "titleWeight": 500,
+    "bodyWeight": 400,
+    "scale": 1.0,
+    "displayTracking": 0.02,
+    "uppercaseLabels": true
+  },
+  "shapes": {
+    "small": 2,
+    "medium": 4,
+    "large": 6,
+    "artwork": 4,
+    "squircle": false,
+    "pillControls": false
+  },
+  "materials": {
+    "blur": 0,
+    "surfaceOpacity": 1.0,
+    "saturation": 0.0,
+    "hairline": true,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 900,
+    "dampingRatio": 1.0,
+    "fastMs": 90,
+    "mediumMs": 160,
+    "slowMs": 260,
+    "pressScale": 0.98,
+    "staggerMs": 18
+  },
+  "playerLayout": "MINIMAL",
+  "navigation": "SIDE_RAIL",
+  "background": "SOLID",
+  "list": "SEPARATORS",
+  "largeTitles": false,
+  "accentPulse": false,
+  "grain": 0.0
+}

@@ -1,0 +1,62 @@
+{
+  "id": "neon",
+  "name": "Neón",
+  "description": "Negro AMOLED puro con acentos que laten con el ritmo.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": false,
+    "dark": {
+      "background": "#000000",
+      "surface": "#0A0A0F",
+      "surfaceHigh": "#14141C",
+      "onBackground": "#FFFFFF",
+      "onMuted": "#9C9CB0",
+      "accent": "#00F0FF",
+      "onAccent": "#001014",
+      "outline": "#2A2A3A",
+      "error": "#FF4D8B"
+    }
+  },
+  "typography": {
+    "display": "WIDE",
+    "body": "INTER",
+    "mono": "MONO",
+    "displayWeight": 700,
+    "titleWeight": 600,
+    "bodyWeight": 400,
+    "scale": 0.97,
+    "displayTracking": -0.02,
+    "uppercaseLabels": true
+  },
+  "shapes": {
+    "small": 6,
+    "medium": 8,
+    "large": 12,
+    "artwork": 8,
+    "squircle": false,
+    "pillControls": false
+  },
+  "materials": {
+    "blur": 16,
+    "surfaceOpacity": 0.8,
+    "saturation": 1.6,
+    "hairline": true,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 520,
+    "dampingRatio": 0.6,
+    "fastMs": 120,
+    "mediumMs": 240,
+    "slowMs": 420,
+    "pressScale": 0.93,
+    "staggerMs": 24
+  },
+  "playerLayout": "ARTWORK_HERO",
+  "navigation": "FLOATING_GLASS_PILL",
+  "background": "SOLID",
+  "list": "PLAIN",
+  "largeTitles": false,
+  "accentPulse": true,
+  "grain": 0.0
+}

@@ -1,0 +1,62 @@
+{
+  "id": "dinamico",
+  "name": "Dinámico",
+  "description": "Todos los colores salen de la portada, en tiempo real.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": true,
+    "dark": {
+      "background": "#101014",
+      "surface": "#1A1A20",
+      "surfaceHigh": "#25252D",
+      "onBackground": "#F4F4F4",
+      "onMuted": "#A6A6B0",
+      "accent": "#B7A6FF",
+      "onAccent": "#120B2E",
+      "outline": "#34343E",
+      "error": "#FF5A5F"
+    }
+  },
+  "typography": {
+    "display": "GROTESK",
+    "body": "INTER",
+    "mono": "MONO",
+    "displayWeight": 700,
+    "titleWeight": 600,
+    "bodyWeight": 400,
+    "scale": 1.0,
+    "displayTracking": -0.03,
+    "uppercaseLabels": false
+  },
+  "shapes": {
+    "small": 14,
+    "medium": 22,
+    "large": 34,
+    "artwork": 28,
+    "squircle": true,
+    "pillControls": true
+  },
+  "materials": {
+    "blur": 32,
+    "surfaceOpacity": 0.5,
+    "saturation": 1.5,
+    "hairline": false,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 340,
+    "dampingRatio": 0.78,
+    "fastMs": 150,
+    "mediumMs": 300,
+    "slowMs": 500,
+    "pressScale": 0.95,
+    "staggerMs": 30
+  },
+  "playerLayout": "IMMERSIVE",
+  "navigation": "FLOATING_GLASS_PILL",
+  "background": "MESH_GRADIENT",
+  "list": "PLAIN",
+  "largeTitles": false,
+  "accentPulse": false,
+  "grain": 0.0
+}
