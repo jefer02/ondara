@@ -1,0 +1,24 @@
+# Baseline Profile inicial de Ondara (escrito a mano: rutas de arranque, tema, navegación y listas).
+# Regenerar en un dispositivo con :benchmark -> BaselineProfileGenerator.
+HSPLapp/ondara/OndaraApp;->**(**)**
+HSPLapp/ondara/MainActivity;->**(**)**
+HSPLapp/ondara/MainActivityKt;->**(**)**
+HSPLapp/ondara/NavigationKt;->**(**)**
+HSPLapp/ondara/AppViewModel;->**(**)**
+Lapp/ondara/core/designsystem/theme/**;
+HSPLapp/ondara/core/designsystem/theme/**;->**(**)**
+Lapp/ondara/core/designsystem/component/**;
+HSPLapp/ondara/core/designsystem/component/**;->**(**)**
+HSPLapp/ondara/core/designsystem/icon/**;->**(**)**
+Lapp/ondara/core/ui/**;
+HSPLapp/ondara/core/ui/**;->**(**)**
+HSPLapp/ondara/feature/home/**;->**(**)**
+HSPLapp/ondara/feature/player/**;->**(**)**
+HSPLapp/ondara/feature/search/**;->**(**)**
+HSPLapp/ondara/feature/library/**;->**(**)**
+HSPLapp/ondara/core/data/CatalogRepositoryImpl**;->**(**)**
+HSPLapp/ondara/core/datastore/**;->**(**)**
+HSPLapp/ondara/core/database/**;->**(**)**
+HSPLapp/ondara/core/model/**;->**(**)**
+PLapp/ondara/source/innertube/**;->**(**)**
+PLapp/ondara/playback/**;->**(**)**
