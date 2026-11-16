@@ -1,0 +1,83 @@
+# Config de detekt para Ondara: reglas por defecto + ajustes para Compose.
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][A-Za-z0-9_]*'
+  MatchingDeclarationName:
+    active: false
+complexity:
+  LongParameterList:
+    functionThreshold: 9
+    constructorThreshold: 12
+    ignoreDefaultParameters: true
+    ignoreAnnotated: ['Composable']
+  LongMethod:
+    threshold: 80
+    ignoreAnnotated: ['Composable']
+  CyclomaticComplexMethod:
+    threshold: 18
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    active: false
+  NestedBlockDepth:
+    threshold: 5
+  LargeClass:
+    threshold: 700
+  ComplexCondition:
+    threshold: 5
+style:
+  MagicNumber:
+    active: false
+  ReturnCount:
+    max: 5
+  MaxLineLength:
+    maxLineLength: 240
+  WildcardImport:
+    active: false
+  UnusedPrivateMember:
+    ignoreAnnotated: ['Preview']
+  ForbiddenComment:
+    active: true
+  LoopWithTooManyJumpStatements:
+    active: false
+  ThrowsCount:
+    max: 4
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
+formatting:
+  MaximumLineLength:
+    active: false
+  ParameterListWrapping:
+    active: false
+  AnnotationOnSeparateLine:
+    active: false
+  PropertyWrapping:
+    active: false
+  MultilineExpressionWrapping:
+    active: false
+  FunctionNaming:
+    active: false
+  NoWildcardImports:
+    active: false
+  Filename:
+    active: false
+  TrailingCommaOnCallSite:
+    active: false
+  TrailingCommaOnDeclarationSite:
+    active: false
+  ArgumentListWrapping:
+    active: false
+  Wrapping:
+    active: false
+  Indentation:
+    active: false
+  MultiLineIfElse:
+    active: false
+  NoMultipleSpaces:
+    active: false
+  ImportOrdering:
+    active: false
