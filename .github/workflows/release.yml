@@ -58,6 +58,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "El release ya existe; se conserva sin cambios."
+            exit 0
+          fi
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
