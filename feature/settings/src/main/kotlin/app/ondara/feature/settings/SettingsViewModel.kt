@@ -1,23 +1,26 @@
 package app.ondara.feature.settings
 
 import androidx.lifecycle.viewModelScope
+import app.ondara.core.domain.AccountRepository
 import app.ondara.core.domain.BackupRepository
 import app.ondara.core.domain.ImportRepository
 import app.ondara.core.domain.PlayerController
 import app.ondara.core.domain.SettingsRepository
+import app.ondara.core.model.AccountsState
 import app.ondara.core.model.AudioQuality
 import app.ondara.core.model.EqualizerBand
 import app.ondara.core.model.UserSettings
 import app.ondara.core.ui.MviViewModel
 import app.ondara.core.ui.Nav
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 data class SettingsUiState(
     val settings: UserSettings = UserSettings(),
     val bands: List<EqualizerBand> = emptyList(),
+    val accounts: AccountsState = AccountsState(),
     /** Texto de progreso de una operación larga (importación, backup) o null. */
     val busy: String? = null,
 )
@@ -30,8 +33,6 @@ sealed interface SettingsEvent {
     data class ImportCsv(val name: String, val csv: String) : SettingsEvent
     data class ExportBackup(val password: String) : SettingsEvent
     data class ImportBackup(val bytes: ByteArray, val password: String) : SettingsEvent
-    data class SaveCookie(val cookie: String) : SettingsEvent
-    data object Logout : SettingsEvent
 }
 
 sealed interface SettingsEffect {
@@ -46,8 +47,10 @@ class SettingsViewModel @Inject constructor(
     private val player: PlayerController,
     private val imports: ImportRepository,
     private val backup: BackupRepository,
+    private val accounts: AccountRepository,
 ) : MviViewModel<SettingsUiState, SettingsEvent, SettingsEffect>(SettingsUiState()) {
     init {
+        viewModelScope.launch { accounts.accounts.collect { setState { copy(accounts = it) } } }
         viewModelScope.launch { repository.settings.collect { setState { copy(settings = it) } } }
     }
 
@@ -71,11 +74,6 @@ class SettingsViewModel @Inject constructor(
                 backup.import(event.bytes, event.password.ifEmpty { null })
                 emit(SettingsEffect.Message("Backup restaurado"))
             }
-            is SettingsEvent.SaveCookie -> viewModelScope.launch {
-                repository.update { it.copy(youtubeCookie = event.cookie) }
-                emit(SettingsEffect.Message("Sesión iniciada"))
-            }
-            SettingsEvent.Logout -> viewModelScope.launch { repository.update { it.copy(youtubeCookie = "") } }
         }
     }
 
