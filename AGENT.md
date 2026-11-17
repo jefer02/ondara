@@ -9,12 +9,14 @@ decisiones que se tomaron al construirlo.
 ./gradlew :app:assembleDebug          # APK en app/build/outputs/apk/debug/
 ./gradlew test testDebugUnitTest      # tests JVM + Robolectric
 ./gradlew :core:designsystem:recordRoborazziDebug   # screenshots por tema
+./gradlew :feature:home:recordRoborazziDebug --max-workers=1   # idem por pantalla (home, search, library, artist, account, lyrics, player)
 ./gradlew detekt :app:lintDebug
 ONDARA_LIVE=1 ./gradlew :source:resolver:test --tests '*Live*'   # contra YouTube real
 ```
 
 Requiere JDK 21 (`gradle/gradle-daemon-jvm.properties` lo fija) y Android SDK con `platforms;android-37.0`.
-En máquinas con poca RAM: `gradle.properties` ya limita el daemon a 2 GB y el de Kotlin a 1 GB.
+En máquinas con poca RAM: `gradle.properties` ya limita el daemon a 2 GB y el de Kotlin a 1 GB. Con 9–10 GB,
+los tests de Robolectric deben ir con `--max-workers=1` (cada JVM de test reserva hasta 1,5 GB más memoria nativa).
 
 ## Módulos
 
@@ -156,6 +158,12 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
     reducido. En Tinta el vídeo puede verse con dithering.
 40. **Perfil bento**: paleta extraída con `androidx.palette`; cara dibujada según el ánimo dominante; compartir
     genera un PNG y lo comparte por `FileProvider` (`${applicationId}.share`).
+41. **Screenshots por pantalla**: cada feature visible (Inicio, Buscar, Biblioteca, Artista, Perfil, Letras,
+    Cine) expone un `XContent(state, onEvent)` sin estado que `XScreen` envuelve con su ViewModel; los tests
+    Roborazzi lo pintan con datos de ejemplo (solo en `src/test`) en los 7 temas. En la captura de Cine el
+    tramado de vídeo va desactivado: en Robolectric el `RenderEffect` AGSL del fondo se extiende a las capas
+    hermanas (texto y controles); en código el fondo y la interfaz son capas separadas, pero falta verificarlo
+    en un dispositivo.
 
 ## Estado de verificación (2026-11-16)
 

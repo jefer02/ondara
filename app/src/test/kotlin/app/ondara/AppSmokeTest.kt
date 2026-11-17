@@ -3,6 +3,7 @@ package app.ondara
 import android.graphics.Bitmap
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -12,6 +13,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performSemanticsAction
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -77,6 +80,21 @@ class AppSmokeTest {
 
     private fun shot(name: String) = compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
 
+    /**
+     * Desplaza la lista vertical de la pantalla hasta que [matcher] esté compuesto: primero hacia abajo y luego
+     * hacia arriba. No usa `performScrollToNode`, que necesita fotogramas y se bloquea con el reloj en pausa.
+     */
+    private fun scrollUntilComposed(matcher: SemanticsMatcher) {
+        val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).onFirst()
+        for (direction in listOf(1f, -1f)) {
+            repeat(SCROLL_STEPS) {
+                if (compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()) return
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, direction * SCROLL_PX) }
+                settle(400)
+            }
+        }
+    }
+
     @Test
     fun appStartsNavigatesAndSwitchesEveryTheme() {
         compose.mainClock.autoAdvance = false
@@ -131,7 +149,10 @@ class AppSmokeTest {
         settle()
         shot("themes_gallery")
         for (theme in listOf("Cupertino", "Mono", "Vinilo", "Neón", "Dinámico", "Tinta", "Ondara")) {
-            compose.onNodeWithContentDescription("Tema $theme", substring = true).performSemanticsAction(SemanticsActions.OnClick)
+            // Con siete temas la galería no cabe en pantalla: se desplaza hasta la tarjeta antes de pulsarla.
+            val card = hasContentDescription("Tema $theme", substring = true)
+            scrollUntilComposed(card)
+            compose.onNode(card).performSemanticsAction(SemanticsActions.OnClick)
             settle(1_500)
             shot("themes_" + theme.lowercase())
         }
@@ -143,5 +164,10 @@ class AppSmokeTest {
         settle()
         compose.onNodeWithText("Tu biblioteca empieza aquí").assertIsDisplayed()
         compose.onAllNodesWithText("Biblioteca").onFirst().assertIsDisplayed()
+    }
+
+    private companion object {
+        const val SCROLL_STEPS = 8
+        const val SCROLL_PX = 700f
     }
 }
