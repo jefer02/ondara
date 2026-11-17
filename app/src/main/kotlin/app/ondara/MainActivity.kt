@@ -61,7 +61,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -416,19 +415,25 @@ internal fun NavHostController.navigateTo(nav: Nav) {
         is Nav.Artist -> navigate(ArtistRoute(nav.id))
         is Nav.Playlist -> navigate(PlaylistRoute(nav.id))
         is Nav.Mood -> navigate(MoodRoute(nav.title, nav.browseId, nav.params))
-        Nav.Settings -> navigate(SettingsRoute) { launchSingleTop = true }
-        Nav.Themes -> navigate(ThemesRoute) { launchSingleTop = true }
         Nav.ThemeEditor -> navigate(ThemeEditorRoute)
         Nav.Showcase -> navigate(ShowcaseRoute)
-        Nav.Login -> navigate(LoginRoute) { launchSingleTop = true }
-        Nav.Profile -> navigate(ProfileRoute) { launchSingleTop = true }
-        Nav.SpotifyConnect -> navigate(SpotifyConnectRoute) { launchSingleTop = true }
-        Nav.Unmatched -> navigate(UnmatchedRoute) { launchSingleTop = true }
         Nav.Downloads -> navigate(LibraryCategoryRoute("downloads"))
-        Nav.About -> navigate(AboutRoute) { launchSingleTop = true }
-        Nav.PlayerSettings -> navigate(PlayerSettingsRoute) { launchSingleTop = true }
         is Nav.LibraryCategory -> navigate(LibraryCategoryRoute(nav.category))
         // Los gestiona AppScaffold (hoja de Cuenta y pestañas); aquí no hay nada que hacer.
         Nav.Account, Nav.Search, Nav.Radio -> Unit
+        else -> singleTopRoute(nav)?.let { route -> navigate(route) { launchSingleTop = true } }
     }
+}
+
+/** Pantallas que no deben apilarse dos veces si se abren repetidamente. */
+private fun singleTopRoute(nav: Nav): Any? = when (nav) {
+    Nav.Settings -> SettingsRoute
+    Nav.Themes -> ThemesRoute
+    Nav.Login -> LoginRoute
+    Nav.Profile -> ProfileRoute
+    Nav.SpotifyConnect -> SpotifyConnectRoute
+    Nav.Unmatched -> UnmatchedRoute
+    Nav.About -> AboutRoute
+    Nav.PlayerSettings -> PlayerSettingsRoute
+    else -> null
 }

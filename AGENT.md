@@ -165,15 +165,16 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
     hermanas (texto y controles); en código el fondo y la interfaz son capas separadas, pero falta verificarlo
     en un dispositivo.
 
-## Estado de verificación (2026-11-16)
+## Estado de verificación (2026-11-17, v2)
 
 | Comprobación | Resultado |
 |---|---|
-| `./gradlew :app:assembleDebug` | OK (APK ~25 MB) |
-| `./gradlew test testDebugUnitTest` | 63 tests, 0 fallos (3 omitidos: los *live*, opt-in) |
+| `./gradlew :app:assembleDebug` | OK (APK ~27 MB) |
+| `./gradlew test testDebugUnitTest` | 229 tests, 0 fallos (3 omitidos: los *live*, opt-in) |
+| `recordRoborazziDebug` | 7 pantallas × 7 temas (49 capturas) + showcase por tema |
 | `./gradlew detekt` | sin hallazgos |
-| `./gradlew :app:lintDebug` | 0 errores, 1 aviso conocido |
-| `ONDARA_LIVE=1 … LiveResolverTest` | NewPipe e InnerTube devuelven URLs reproducibles |
+| `./gradlew :app:lintDebug` | 0 errores, 9 avisos (JavaScript del WebView de inicio de sesión, sugerencias KTX, versiones) |
+| `ONDARA_LIVE=1 … LiveResolverTest` | NewPipe e InnerTube devuelven URLs reproducibles (v1) |
 
 ## Lo que no se pudo verificar en este entorno
 
@@ -189,6 +190,10 @@ No había dispositivo ni emulador (máquina sin KVM configurado y con 9 GB de RA
 - El Baseline Profile incluido (`app/src/main/baseline-prof.txt`) está escrito a mano con las rutas
   críticas; el generador (`BaselineProfileGenerator`) lo regenera en un dispositivo.
 - Android Auto y el widget no se probaron en hardware.
+- **v2 sin dispositivo**: inicio de sesión real en YouTube Music y Spotify (WebView, Custom Tabs, cookies),
+  la sincronización con WorkManager, el vídeo de fondo del layout Cine (segundo ExoPlayer, sincronía,
+  Wi-Fi), el tramado de vídeo en Tinta, el desenfoque progresivo de Haze y las animaciones de la barra
+  inferior solo están verificados por compilación, tests JVM/Robolectric y capturas.
 
 ## Trabajo futuro
 
