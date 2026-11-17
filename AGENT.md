@@ -26,13 +26,14 @@ En máquinas con poca RAM: `gradle.properties` ya limita el daemon a 2 GB y el d
 :core:database       Room
 :core:datastore      DataStore tipado (protobuf vía kotlinx.serialization)
 :core:data           repositorios offline-first, importación, backup, módulo Hilt de red
-:core:designsystem   tokens, ThemeSpec, 6 temas JSON, componentes propios, shaders
+:core:designsystem   tokens, ThemeSpec, 7 temas JSON (incl. Tinta), componentes propios, shaders, ImmersiveHeroScaffold
 :core:ui             componentes compuestos (SongRow, Shelf, DetailScaffold, menú de canción), base MVI, Nav
 :source:innertube    cliente + parser de InnerTube (JVM)
 :source:resolver     StreamResolver + estrategias + caché LRU/TTL (JVM)
 :source:lyrics       proveedores, parsers LRC/KRC, agregador con scoring (JVM)
-:playback            ExoPlayer, MediaLibraryService, crossfade, descargas, widget
-:feature:*           home, search, library, player, album, artist, playlist, lyrics, settings, themes
+:source:spotify      SpotifyAuthProvider (PKCE oficial / cookie experimental), cliente, TrackMatcher (JVM)
+:playback            ExoPlayer, MediaLibraryService, crossfade, descargas, widget, vídeo de fondo (Cine)
+:feature:*           home, news, radio, search, library, player, album, artist, playlist, lyrics, settings, themes, account
 :benchmark           Macrobenchmark + generador de Baseline Profile
 build-logic/         convention plugins (ondara.jvm.library, ondara.android.library/compose/feature/application, ondara.hilt)
 ```
@@ -72,6 +73,14 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
 | Pre-resolución i+1 | `playback/PlayerControllerImpl.prefetchNext` | salto: de O(red) a acierto O(1) |
 | Contraste AA (búsqueda binaria de mezcla) | `designsystem/theme/ColorMath.kt` | O(log 1/ε) |
 | CSV RFC 4180 | `core/domain/UseCases.kt` | O(n) |
+| `TrackMatcher` (0.45·título + 0.30·artista + 0.25·duración, Jaro–Winkler) | `source/spotify/TrackMatcher.kt` | O(k·L²) por pista (k candidatos, L longitud); n pistas con `Semaphore(4)` |
+| Ranking de Top Picks / mixes (`rankBy`) | `core/data/PersonalRepositoryImpl.kt` | O(n log n) |
+| Estado de ánimo por géneros (MusicBrainz, caché Room) | `PersonalRepositoryImpl.MoodClassifier` | O(a·t), a artistas, t etiquetas |
+| Traducción de letras por lotes de 1 400 caracteres | `core/data/LyricsTranslator.kt` | O(n), ⌈chars/1400⌉ peticiones |
+| Sincronía vídeo↔audio (corrección si deriva > 150 ms) | `playback/VideoSync.kt` | O(1) por tick |
+| Agrupación de resultados de búsqueda | `feature/search/SearchResults.kt` | O(n) |
+| Dithering Bayer 4×4 (AGSL) | `designsystem/component/Effects.kt` | O(1) por píxel |
+| Colapso del título grande / barra inferior (NestedScroll) | `designsystem/component/Layout.kt` | O(1) por evento de scroll |
 
 ## Decisiones
 
@@ -102,6 +111,51 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
 24. **R8 desactivado en release**: sin dispositivo no se pudieron validar las reglas *keep* (NewPipe/Rhino, Ktor). `proguard-rules.pro` trae un punto de partida.
 25. **Prueba de humo sobre Robolectric** (`app/src/test/.../AppSmokeTest.kt`): arranca la `MainActivity` real con el grafo Hilt de producción, recorre Inicio → Buscar → Biblioteca → Ajustes → Temas y aplica los 6 temas. Corre sin red (proxy inexistente) y precalienta la caché JNI de `java.nio` del runtime nativo de Robolectric, que aborta si el primer uso ocurre en un hilo de fondo.
 26. **Lint**: 0 errores; queda 1 aviso conocido (Haze 2.x disponible, ver decisión 7).
+
+## Decisiones v2 (rediseño, 2026-11-17)
+
+27. **Ejecución con agentes paralelos**: cada agente tuvo módulos propios (`docs/agentes/REGLAS.md`) y Gradle
+    serializado con `flock /tmp/ondara-gradle.lock` (9 GB de RAM). Parte del trabajo se delegó a Codex (OpenAI)
+    a petición del usuario; la integración, la compilación y los commits los hizo el agente principal.
+28. **Navegación**: píldora de vidrio con 4 pestañas (Inicio, Novedades, Radio, Biblioteca) + círculo de Buscar.
+    Al desplazar hacia abajo encoge al icono activo con el mini-reproductor al lado (`ChromeState`, spring 0.8).
+    Ajustes y Temas salen de la cabecera y pasan a la hoja de Cuenta (avatar, único botón a la derecha).
+29. **Haze por pantalla**: Haze no puede aplicar el efecto dentro de su propia fuente, así que `ScreenScaffold`
+    crea un `HazeState` local para el título grande y el *scrim* progresivo de la barra de estado; la
+    navegación, el mini-reproductor y la hoja de Cuenta (`GlassOverlaySheet`) son hermanos de la fuente global.
+30. **Ondara Flow** se movió de Inicio a Radio. Inicio sigue el orden de Apple Music; "Volver a escuchar" es
+    carrusel y se oculta con menos de 3 elementos.
+31. **Mixes virtuales** (`MixIds`): Favoritos, Novedades, Calma, Descubrir, Replay y estaciones se calculan al
+    abrirlos a partir del historial local; las portadas son *mesh gradients* generados, no imágenes.
+32. **Estados de ánimo y géneros**: etiquetas de MusicBrainz por artista (sin clave, 1 petición/s, caché en
+    Room `artist_tags`). Sin red, el perfil muestra los datos que haya, nunca valores inventados.
+33. **Traducción de letras**: endpoint público `translate_a/single` (cliente `gtx`) de Google, sin clave; se
+    guarda con la letra. Desactivable en Ajustes. Si el idioma ya es el del usuario no hay petición.
+34. **Credenciales en Keystore**: las cookies de YouTube Music (multi-cuenta) y los tokens de Spotify van en
+    `SecretStore` (AES-256-GCM con clave de Android Keystore), no en DataStore. La cookie antigua
+    `youtubeCookie` se migra y se borra al arrancar. Cerrar sesión borra cookies del WebView y el secreto.
+35. **YouTube Music autenticado**: `SAPISIDHASH` (`SHA-1(ts + " " + SAPISID + " " + origin)`) en InnerTube
+    para biblioteca, *likes*, historial y recomendaciones. Los *likes* locales se envían con `like/like`
+    (`LikePusher`), desactivable.
+36. **Spotify por estrategia** (`SpotifyAuthProvider`): oficial PKCE con Custom Tabs y Client ID del usuario
+    (limitación de Spotify: 5 usuarios en modo desarrollo y Premium del propietario) o experimental por cookie
+    `sp_dc` (APIs internas, TOTP; desactivado por defecto y con aviso; código adaptado de Echo Music y
+    Metrolist, GPL-3.0). Importación cada 12 h con WorkManager o a mano, emparejamiento con
+    `TrackMatcher` (acepta ≥ 0.8; el resto va a "Sin coincidencia") y caché `spotifyId → videoId` en Room.
+37. **Room v2** con `AutoMigration(1 → 2)` (fijados, guardados, recientes, tablas de Spotify, etiquetas).
+    Los campos nuevos de `UserSettings` se añadieron **al final**: el número de campo protobuf es posicional.
+38. **Tema Tinta**: los tokens del prompt no daban AA en todos los pares; se ajustaron `onMuted` (#8E93AB),
+    `surfaceHigh` (#2B2D3A) y `error` (#FF8A8F). Los bloques del layout Bento fuerzan su texto a AA en
+    `ThemeSpec`. Portadas con dithering Bayer 4×4 (AGSL en API 33+, escala de grises antes) que pasan a color
+    en 300 ms al reproducir. Iconos dibujados a mano (`HandDrawnIcons`) sustituyen al set por nombre.
+39. **Reproductor "Cine"** (`PlayerLayout.CINEMATIC`): valor por defecto en la primera instalación
+    (`UserSettings.playerLayout = "CINEMATIC"`); `"THEME"` respeta el layout de cada tema. El vídeo de fondo
+    (`VideoBackgroundController`) usa un segundo ExoPlayer silenciado con el stream de vídeo de menor calidad,
+    con estrategias `VideoSource`: vídeo propio → búsqueda del vídeo oficial → portada con Ken Burns + mesh.
+    Solo en Wi-Fi por defecto, se detiene en segundo plano o con la pantalla apagada y respeta movimiento
+    reducido. En Tinta el vídeo puede verse con dithering.
+40. **Perfil bento**: paleta extraída con `androidx.palette`; cara dibujada según el ánimo dominante; compartir
+    genera un PNG y lo comparte por `FileProvider` (`${applicationId}.share`).
 
 ## Estado de verificación (2026-11-16)
 

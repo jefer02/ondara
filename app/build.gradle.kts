@@ -81,6 +81,10 @@ dependencies {
     implementation(project(":feature:lyrics"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:themes"))
+    implementation(project(":feature:news"))
+    implementation(project(":feature:radio"))
+    implementation(project(":feature:account"))
+    implementation(project(":source:spotify"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

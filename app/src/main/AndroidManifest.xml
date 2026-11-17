@@ -29,7 +29,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Redirect de OAuth (PKCE) de Spotify: ondara://spotify-callback?code=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ondara" android:host="spotify-callback" />
+            </intent-filter>
         </activity>
+
+        <!-- Compartir el perfil como imagen (solo la carpeta cache/share). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
 
         <!-- WorkManager se inicializa desde OndaraApp con la HiltWorkerFactory. -->
         <provider

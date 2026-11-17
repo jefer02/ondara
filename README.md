@@ -66,18 +66,38 @@ El repositorio no contiene claves, cuentas ni tokens.
 
 ## Agradecimientos
 
-Ondara no copia código de otros proyectos, pero se apoya en sus ideas y en su trabajo de ingeniería inversa:
+Ondara se apoya en las ideas y la ingeniería inversa de otros proyectos. El modo experimental de Spotify
+(`source/spotify/WebCookieAuthProvider.kt`, `PathfinderLibrary.kt`) **adapta código GPL-3.0** de Echo Music y
+Metrolist; cada archivo lo indica en su cabecera con el archivo de origen.
 
 | Proyecto | Qué se tomó |
 |---|---|
-| [Echo Music](https://github.com/EchoMusicApp/Echo-Music) (GPL-3.0) | Referencia funcional: rotación de clientes de InnerTube, resolución con fallback, agregación de proveedores de letras, crossfade de igual potencia. |
-| [Metrolist](https://github.com/mostafaalagamy/Metrolist) (GPL-3.0) | Base de Echo Music; mismo mapa de endpoints de InnerTube y el enfoque de inicio de sesión por WebView. |
+| [Echo Music](https://github.com/EchoMusicApp/Echo-Music) (GPL-3.0) | Referencia funcional: rotación de clientes de InnerTube, resolución con fallback, agregación de proveedores de letras, crossfade de igual potencia. **Código adaptado**: inicio de sesión de Spotify por cookie `sp_dc` (TOTP) y consultas Pathfinder de la biblioteca. |
+| [Metrolist](https://github.com/MetrolistGroup/Metrolist) (GPL-3.0) | Base de Echo Music; mapa de endpoints de InnerTube (biblioteca, historial, *likes*) y el enfoque de inicio de sesión por WebView. **Código adaptado**: `spotlib` (TOTP, `client-token`, Pathfinder). |
+| [ytmusicapi](https://github.com/sigma67/ytmusicapi) (MIT) | Referencia del cálculo `SAPISIDHASH` y de los endpoints autenticados de YouTube Music. |
+| [MusicBrainz](https://musicbrainz.org) | API pública de etiquetas de género para el perfil. |
 | [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0) | Dependencia: descifrado de firmas y extracción de streams. |
 | [LRCLIB](https://lrclib.net) | API pública de letras sincronizadas. |
 | KuGou | Letras KRC; el esquema de decodificación (XOR de 16 bytes + zlib) es conocimiento público de la comunidad. |
 | [Haze](https://github.com/chrisbanes/haze) (Apache-2.0) | Dependencia: desenfoque de fondo para las capas de vidrio. |
 | [Reorderable](https://github.com/Calvin-LL/Reorderable) (Apache-2.0) | Dependencia: arrastrar para reordenar la cola. |
-| Tipografías (SIL OFL) | Space Grotesk, Inter, JetBrains Mono, Doto, Fraunces, Unbounded. |
+| Tipografías (SIL OFL) | Space Grotesk, Inter, JetBrains Mono, Doto, Fraunces, Unbounded, Fredoka y Nunito (tema Tinta). |
+
+## Conectar Spotify
+
+Ondara no reproduce desde Spotify: importa tus playlists, canciones guardadas y álbumes y los empareja con
+YouTube Music (`TrackMatcher`; lo dudoso queda en *Sin coincidencia* para elegirlo a mano). Hay dos modos, en
+Cuenta → Spotify:
+
+- **Oficial (recomendado)**: OAuth PKCE con tu propio Client ID. Crea una app en
+  [developer.spotify.com](https://developer.spotify.com/dashboard), añade el *redirect URI*
+  `ondara://spotify-callback` y pega el Client ID en Ondara. Limitaciones de Spotify: las apps en modo
+  desarrollo solo admiten 5 usuarios dados de alta a mano y la cuenta propietaria necesita Premium.
+- **Experimental (desactivado por defecto)**: inicia sesión en la web de Spotify y usa la cookie `sp_dc`.
+  Usa APIs internas que pueden romperse o contravenir los términos de Spotify; actívalo bajo tu responsabilidad.
+
+Las credenciales se cifran con Android Keystore (AES-256-GCM). La biblioteca se resincroniza cada 12 h
+con WorkManager o a mano desde la hoja de Cuenta.
 
 ## Licencia
 

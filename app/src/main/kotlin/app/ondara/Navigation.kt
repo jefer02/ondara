@@ -15,7 +15,16 @@ import androidx.navigation.toRoute
 import app.ondara.core.designsystem.ShowcaseScreen
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.ui.Nav
+import app.ondara.feature.account.AboutScreen
+import app.ondara.feature.account.OnboardingScreen
+import app.ondara.feature.account.ProfileScreen
+import app.ondara.feature.account.SpotifyConnectScreen
+import app.ondara.feature.account.UnmatchedScreen
 import app.ondara.feature.album.AlbumScreen
+import app.ondara.feature.library.LibraryCategoryScreen
+import app.ondara.feature.news.NewsScreen
+import app.ondara.feature.player.PlayerSettingsScreen
+import app.ondara.feature.radio.RadioScreen
 import app.ondara.feature.artist.ArtistScreen
 import app.ondara.feature.home.HomeScreen
 import app.ondara.feature.home.MoodScreen
@@ -52,12 +61,30 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object LoginRoute
 
+@Serializable data object NewsRoute
+
+@Serializable data object RadioRoute
+
+@Serializable data object ProfileRoute
+
+@Serializable data object OnboardingRoute
+
+@Serializable data object SpotifyConnectRoute
+
+@Serializable data object UnmatchedRoute
+
+@Serializable data object AboutRoute
+
+@Serializable data object PlayerSettingsRoute
+
+@Serializable data class LibraryCategoryRoute(val category: String)
+
 /**
  * Grafo raíz. `:app` es el único módulo que conoce todos los features: cada pantalla emite [Nav]
  * y aquí se traduce a rutas tipadas.
  */
 @Composable
-fun OndaraNavHost(navController: NavHostController, onNavigate: (Nav) -> Unit) {
+fun OndaraNavHost(navController: NavHostController, onNavigate: (Nav) -> Unit, onOnboardingFinished: () -> Unit) {
     val motion = OndaraTheme.motion
     val duration = if (motion.reduced) 150 else motion.mediumMs
     NavHost(
@@ -75,6 +102,15 @@ fun OndaraNavHost(navController: NavHostController, onNavigate: (Nav) -> Unit) {
         composable<HomeRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { HomeScreen(onNavigate) }
         composable<SearchRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { SearchScreen(onNavigate) }
         composable<LibraryRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { LibraryScreen(onNavigate) }
+        composable<NewsRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { NewsScreen(onNavigate) }
+        composable<RadioRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { RadioScreen(onNavigate) }
+        composable<LibraryCategoryRoute> { LibraryCategoryScreen(it.toRoute<LibraryCategoryRoute>().category, onNavigate) }
+        composable<ProfileRoute> { ProfileScreen(onNavigate) }
+        composable<OnboardingRoute> { OnboardingScreen(onFinished = onOnboardingFinished, onNavigate = onNavigate) }
+        composable<SpotifyConnectRoute> { SpotifyConnectScreen(onNavigate) }
+        composable<UnmatchedRoute> { UnmatchedScreen(onNavigate) }
+        composable<AboutRoute> { AboutScreen(onNavigate) }
+        composable<PlayerSettingsRoute> { PlayerSettingsScreen(onNavigate) }
         composable<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, onNavigate) }
         composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, onNavigate) }
         composable<PlaylistRoute> { PlaylistScreen(it.toRoute<PlaylistRoute>().id, onNavigate) }
