@@ -18,6 +18,7 @@ import app.ondara.core.domain.LibraryRepository
 import app.ondara.core.domain.PlayerController
 import app.ondara.core.domain.QueueShuffler
 import app.ondara.core.model.EqualizerBand
+import app.ondara.core.model.PlaybackContext
 import app.ondara.core.model.PlayerState
 import app.ondara.core.model.RepeatMode
 import app.ondara.core.model.Song
@@ -98,7 +99,7 @@ class PlayerControllerImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.Main)
 
-    override fun play(songs: List<Song>, startIndex: Int, shuffle: Boolean) {
+    override fun play(songs: List<Song>, startIndex: Int, shuffle: Boolean, context: PlaybackContext?) {
         if (songs.isEmpty()) return
         ensureService()
         val index = startIndex.coerceIn(0, songs.lastIndex)
@@ -109,7 +110,7 @@ class PlayerControllerImpl @Inject constructor(
         player.setMediaItems(ordered.map { it.toMediaItem() }, if (shuffle) 0 else index, 0)
         player.prepare()
         player.play()
-        _state.update { it.copy(shuffle = shuffle, error = null) }
+        _state.update { it.copy(shuffle = shuffle, error = null, context = context) }
     }
 
     override fun playNext(song: Song) {
@@ -139,6 +140,13 @@ class PlayerControllerImpl @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) = player.seekTo(positionMs)
+
+    override fun seekBy(deltaMs: Long) {
+        val position = positionMs()
+        val duration = state.value.durationMs.coerceAtLeast(0)
+        val target = if (deltaMs > 0 && position > Long.MAX_VALUE - deltaMs) Long.MAX_VALUE else position + deltaMs
+        player.seekTo(target.coerceIn(0, duration))
+    }
 
     override fun skipToIndex(index: Int) {
         if (index in 0 until player.mediaItemCount) {
@@ -194,7 +202,7 @@ class PlayerControllerImpl @Inject constructor(
     }
 
     override fun startRadio(seed: Song) {
-        play(listOf(seed))
+        play(listOf(seed), context = PlaybackContext("Radio", "Radio de ${seed.title}"))
         extendWithFlow(force = true)
     }
 

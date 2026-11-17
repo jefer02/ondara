@@ -29,6 +29,7 @@ import app.ondara.core.database.DownloadWithSong
 import app.ondara.core.database.LibraryDao
 import app.ondara.core.database.toEntity
 import app.ondara.core.domain.DownloadRepository
+import app.ondara.core.domain.VideoBackgroundController
 import app.ondara.core.domain.PlayerController
 import app.ondara.core.model.AudioQuality
 import app.ondara.core.model.DownloadInfo
@@ -185,6 +186,8 @@ class DownloadWorker @AssistedInject constructor(
 @InstallIn(SingletonComponent::class)
 abstract class PlaybackModule {
     @Binds abstract fun controller(impl: PlayerControllerImpl): PlayerController
+
+    @Binds abstract fun videoController(impl: VideoBackgroundControllerImpl): VideoBackgroundController
 
     @Binds abstract fun downloads(impl: DownloadRepositoryImpl): DownloadRepository
 }

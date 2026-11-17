@@ -18,6 +18,7 @@ import io.ktor.client.request.parameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -27,6 +28,9 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.VideoStream
 
 private inline fun <T> resultOf(block: () -> T): Result<T> = try {
     Result.success(block())
@@ -40,7 +44,7 @@ private inline fun <T> resultOf(block: () -> T): Result<T> = try {
  * Motor principal: NewPipeExtractor (descifra `signatureCipher` y el parámetro `n` ejecutando
  * el JS del reproductor con Rhino). Es bloqueante, por eso corre en `Dispatchers.IO`.
  */
-class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy {
+class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy, VideoStreamStrategy, VideoSearchStrategy {
     override val name = "newpipe"
 
     override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> = resultOf {
@@ -61,6 +65,57 @@ class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy {
             best.toResolved(videoId, name)
         }
     }
+
+    /**
+     * Pistas de vídeo de [videoId]. NewPipe no expone `musicVideoType`, así que la "art track" se decide
+     * con la heurística de [VideoSelection.isArtTrack] (canal "- Topic" / "Provided to YouTube by").
+     * Una extracción de red; la selección es O(f) con f formatos.
+     */
+    override suspend fun resolveVideo(videoId: String): Result<ResolvedVideo> = resultOf {
+        runInterruptible(Dispatchers.IO) {
+            ensureInit()
+            val extractor = ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+            extractor.fetchPage()
+            val audio = extractor.audioStreams.filter { it.isUrl }.map { s ->
+                AudioCandidate(s.content, s.format?.mimeType ?: "audio/mp4", s.averageBitrate.coerceAtLeast(0), null, null)
+            }.pick(AudioQuality.HIGH)
+            VideoSelection.build(
+                videoId = videoId,
+                source = name,
+                videoOnly = extractor.videoOnlyStreams.filter { it.isUrl }.map { it.toCandidate(hasAudio = false) },
+                muxed = extractor.videoStreams.filter { it.isUrl && !it.isVideoOnly }.map { it.toCandidate(hasAudio = true) },
+                audioUrl = audio?.url,
+                isArtTrack = VideoSelection.isArtTrack(
+                    musicVideoType = null,
+                    author = runCatching { extractor.uploaderName }.getOrNull(),
+                    description = runCatching { extractor.description.content }.getOrNull(),
+                ),
+                durationSec = runCatching { extractor.length.toInt() }.getOrDefault(0),
+            )
+        }
+    }
+
+    /** Búsqueda de vídeos en YouTube Music (filtro `music_videos`). Una llamada de red, O(r) con r resultados. */
+    override suspend fun searchVideos(query: String): Result<List<VideoSearchHit>> = resultOf {
+        runInterruptible(Dispatchers.IO) {
+            ensureInit()
+            val extractor = ServiceList.YouTube.getSearchExtractor(query, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_VIDEOS), "")
+            extractor.fetchPage()
+            extractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+                val id = VIDEO_ID.find(item.url.orEmpty())?.groupValues?.get(1) ?: return@mapNotNull null
+                VideoSearchHit(id, item.name.orEmpty(), item.uploaderName.orEmpty(), item.duration.toInt().coerceAtLeast(0))
+            }
+        }
+    }
+
+    private fun VideoStream.toCandidate(hasAudio: Boolean) = VideoCandidate(
+        url = content,
+        mimeType = (format?.mimeType ?: "video/mp4") + (codec?.takeIf { it.isNotBlank() }?.let { "; codecs=\"$it\"" } ?: ""),
+        width = width.coerceAtLeast(0),
+        height = if (height > 0) height else VideoSelection.heightOf(resolution),
+        bitrate = bitrate.coerceAtLeast(0),
+        hasAudio = hasAudio,
+    )
 
     private fun ensureInit() {
         if (initialized) return
@@ -93,6 +148,7 @@ class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy {
 
     private companion object {
         @Volatile var initialized = false
+        val VIDEO_ID = Regex("""(?:[?&]v=|youtu\.be/)([\w-]{11})""")
     }
 }
 
@@ -104,8 +160,55 @@ class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy {
 class InnerTubeClientStrategy(
     private val client: InnerTubeClient,
     private val rotation: List<YouTubeClient> = YouTubeClient.PLAYER_ROTATION,
-) : StreamStrategy {
+) : StreamStrategy, VideoStreamStrategy {
     override val name = "innertube"
+
+    /** Igual que [resolve] pero para las pistas de vídeo: O(c) peticiones en el peor caso con c clientes. */
+    override suspend fun resolveVideo(videoId: String): Result<ResolvedVideo> {
+        var last: Throwable = IllegalStateException("sin clientes")
+        for (identity in rotation) {
+            val attempt = resultOf { parseVideo(videoId, client.player(videoId, identity), identity.name) }
+            attempt.onSuccess { return attempt }.onFailure { last = it }
+        }
+        return Result.failure(last)
+    }
+
+    /**
+     * Extrae de la respuesta de `player` las pistas de solo vídeo (`adaptiveFormats`), las progresivas
+     * (`formats`) y si es art track (`videoDetails.musicVideoType`). O(f) con f formatos.
+     */
+    internal fun parseVideo(videoId: String, json: JsonObject, clientName: String): ResolvedVideo {
+        val status = json.path("playabilityStatus", "status").string
+        check(status == "OK") { "$clientName: ${json.path("playabilityStatus", "reason").string ?: status}" }
+        val details = json["videoDetails"]
+        check(details["videoId"].string.let { it == null || it == videoId }) { "$clientName devolvió otro vídeo" }
+        val adaptive = json.path("streamingData", "adaptiveFormats").array
+        val audio = adaptive.mapNotNull { f ->
+            val mime = f["mimeType"].string?.takeIf { it.startsWith("audio/") } ?: return@mapNotNull null
+            AudioCandidate(f["url"].string ?: return@mapNotNull null, mime, f["averageBitrate"].int ?: f["bitrate"].int ?: 0, null, null)
+        }.pick(AudioQuality.HIGH)
+        return VideoSelection.build(
+            videoId = videoId,
+            source = name,
+            videoOnly = adaptive.mapNotNull { it.toVideoCandidate(hasAudio = false) },
+            muxed = json.path("streamingData", "formats").array.mapNotNull { it.toVideoCandidate(hasAudio = true) },
+            audioUrl = audio?.url,
+            isArtTrack = VideoSelection.isArtTrack(details["musicVideoType"].string, details["author"].string, details["shortDescription"].string),
+            durationSec = details["lengthSeconds"].string?.toIntOrNull() ?: details["lengthSeconds"].int ?: 0,
+        )
+    }
+
+    private fun JsonElement.toVideoCandidate(hasAudio: Boolean): VideoCandidate? {
+        val mime = this["mimeType"].string?.takeIf { it.startsWith("video/") } ?: return null
+        return VideoCandidate(
+            url = this["url"].string ?: return null,
+            mimeType = mime,
+            width = this["width"].int ?: 0,
+            height = this["height"].int ?: VideoSelection.heightOf(this["qualityLabel"].string),
+            bitrate = this["averageBitrate"].int ?: this["bitrate"].int ?: 0,
+            hasAudio = hasAudio,
+        )
+    }
 
     override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> {
         var last: Throwable = IllegalStateException("sin clientes")
