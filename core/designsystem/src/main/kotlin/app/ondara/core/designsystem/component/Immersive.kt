@@ -373,4 +373,3 @@ fun GlassCard(
 fun BottomFade(height: Dp, modifier: Modifier = Modifier, color: Color = OndaraTheme.colors.background) {
     Box(modifier.fillMaxWidth().height(height).background(Brush.verticalGradient(0f to Color.Transparent, 0.75f to color.copy(alpha = 0.9f), 1f to color)))
 }
-

@@ -212,7 +212,16 @@ private val FILTERS = listOf(
 @Composable
 fun SearchScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: SearchViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val results = viewModel.results.collectAsLazyPagingItems()
+    CollectEffects(viewModel.effects) { if (it is SearchEffect.Navigate) onNavigate(it.nav) }
+    SearchContent(state, viewModel::onEvent, onNavigate, viewModel.results, modifier)
+}
+
+@Composable
+internal fun SearchContent(
+    state: SearchUiState, onEvent: (SearchEvent) -> Unit, onNavigate: (Nav) -> Unit,
+    resultsFlow: Flow<PagingData<MusicItem>>, modifier: Modifier = Modifier,
+) {
+    val results = resultsFlow.collectAsLazyPagingItems()
     var firstPageSize by remember(state.submitted, state.filter) { mutableStateOf<Int?>(null) }
     var refreshing by remember(state.submitted, state.filter) { mutableStateOf(false) }
     LaunchedEffect(state.submitted, state.filter, results.loadState.refresh, results.itemCount) {
@@ -226,28 +235,27 @@ fun SearchScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewM
     }
     val focus = LocalFocusManager.current
     var menu by remember { mutableStateOf<Song?>(null) }
-    CollectEffects(viewModel.effects) { if (it is SearchEffect.Navigate) onNavigate(it.nav) }
     ScreenScaffold("Buscar", modifier, actions = { AvatarButton(onClick = { onNavigate(Nav.Account) }) }) {
         item(key = "field", contentType = "field") {
-            SearchField(state, viewModel::onEvent) {
+            SearchField(state, onEvent) {
                 focus.clearFocus()
-                viewModel.onEvent(SearchEvent.Submit(state.query))
+                onEvent(SearchEvent.Submit(state.query))
             }
         }
         if (state.submitted.isEmpty()) {
             val suggestions = if (state.query.isBlank()) emptyList() else state.suggestions
             items(suggestions.size, key = { "sug-" + suggestions[it] }, contentType = { "suggestion" }) { i ->
-                TermRow(suggestions[i], OndaraIcons.Search, { focus.clearFocus(); viewModel.onEvent(SearchEvent.Submit(suggestions[i])) })
+                TermRow(suggestions[i], OndaraIcons.Search, { focus.clearFocus(); onEvent(SearchEvent.Submit(suggestions[i])) })
             }
             if (state.query.isBlank() && state.history.isNotEmpty()) {
                 item(key = "history-title", contentType = "heading") {
                     SectionTitle("Recientes", Modifier.padding(top = OndaraTheme.spacing.lg), action = "Borrar",
-                        onAction = { viewModel.onEvent(SearchEvent.ClearHistory) })
+                        onAction = { onEvent(SearchEvent.ClearHistory) })
                 }
                 items(state.history.take(5).size, key = { "his-" + state.history[it] }, contentType = { "history" }) { i ->
                     val term = state.history[i]
-                    TermRow(term, OndaraIcons.History, { focus.clearFocus(); viewModel.onEvent(SearchEvent.Submit(term)) }) {
-                        OndaraIconButton(OndaraIcons.Close, "Quitar $term del historial", { viewModel.onEvent(SearchEvent.RemoveHistory(term)) }, size = 16.dp)
+                    TermRow(term, OndaraIcons.History, { focus.clearFocus(); onEvent(SearchEvent.Submit(term)) }) {
+                        OndaraIconButton(OndaraIcons.Close, "Quitar $term del historial", { onEvent(SearchEvent.RemoveHistory(term)) }, size = 16.dp)
                     }
                 }
             }
@@ -262,14 +270,14 @@ fun SearchScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewM
                 }
                 if (state.moodsError != null && state.moods.isEmpty()) item(key = "moods-error", contentType = "empty") {
                     EmptyState(OndaraIcons.Search, "No se pudieron cargar las categorías", message = state.moodsError,
-                        action = "Reintentar", onAction = { viewModel.onEvent(SearchEvent.RetryMoods) })
+                        action = "Reintentar", onAction = { onEvent(SearchEvent.RetryMoods) })
                 }
                 items(state.moods.withIndex().toList().chunked(2), key = { "moods-${it.first().value.browseId}-${it.first().index}" }, contentType = { "mood-row" }) { row ->
                     Row(Modifier.padding(horizontal = OndaraTheme.spacing.screen, vertical = OndaraTheme.spacing.sm),
                         horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md)) {
                         row.forEach { (index, mood) ->
                             MoodCard(mood, index, state.artwork[mood], Modifier.weight(1f),
-                                onLoad = { viewModel.onEvent(SearchEvent.LoadArtwork(mood)) },
+                                onLoad = { onEvent(SearchEvent.LoadArtwork(mood)) },
                                 onClick = { onNavigate(Nav.Mood(mood.title, mood.browseId, mood.params)) })
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -284,7 +292,7 @@ fun SearchScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewM
                     horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.sm),
                 ) {
                     items(FILTERS, key = { it.first }) { (filter, label) ->
-                        OndaraChip(label, state.filter == filter, { viewModel.onEvent(SearchEvent.FilterChanged(filter)) })
+                        OndaraChip(label, state.filter == filter, { onEvent(SearchEvent.FilterChanged(filter)) })
                     }
                 }
             }
@@ -303,7 +311,7 @@ fun SearchScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewM
                         if (row.heading != null) SectionTitle(row.heading)
                         else {
                             val item = results[row.index]
-                            if (item != null) MusicItemRow(item, { viewModel.onEvent(SearchEvent.Open(item)) },
+                            if (item != null) MusicItemRow(item, { onEvent(SearchEvent.Open(item)) },
                                 onMore = (item as? MusicItem.SongItem)?.let { song -> { menu = song.song } })
                         }
                     }

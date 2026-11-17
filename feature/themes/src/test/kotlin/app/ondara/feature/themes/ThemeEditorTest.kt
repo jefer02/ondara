@@ -16,7 +16,7 @@ class ThemeEditorTest {
 
     @Test
     fun `any accent hue on any base theme stays WCAG AA`() {
-        assertEquals(6, bases.size)
+        assertEquals(7, bases.size)
         for (base in bases) {
             for (hue in 0..360 step 15) {
                 val theme = buildCustomTheme(base, "Prueba", hue.toFloat(), 18, 20, PlayerLayout.VINYL, NavStyle.SIDE_RAIL, BackgroundStyle.SOLID)

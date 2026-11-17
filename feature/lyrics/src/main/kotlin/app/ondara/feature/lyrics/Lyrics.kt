@@ -202,6 +202,14 @@ fun LyricsView(
     viewModel: LyricsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LyricsContent(state, viewModel::onEvent, viewModel::positionMs, modifier, contentPadding, showHeader)
+}
+
+@Composable
+internal fun LyricsContent(
+    state: LyricsUiState, onEvent: (LyricsEvent) -> Unit, positionMs: () -> Long,
+    modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(vertical = 120.dp), showHeader: Boolean = true,
+) {
     val lyrics = state.lyrics
     val padding = PaddingValues(
         start = contentPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
@@ -212,17 +220,17 @@ fun LyricsView(
     Box(modifier.fillMaxSize().background(OndaraTheme.colors.background)) {
         LyricsBackground(state.song)
         Column(Modifier.fillMaxSize()) {
-            if (showHeader) LyricsHeader(state) { viewModel.onEvent(it) }
+            if (showHeader) LyricsHeader(state) { onEvent(it) }
             when {
                 state.loading -> Column(Modifier.fillMaxSize().padding(OndaraTheme.spacing.xxl), verticalArrangement = Arrangement.Center) {
                     repeat(5) { Skeleton(Modifier.padding(vertical = OndaraTheme.spacing.md).size((260 - it * 28).dp, 26.dp)) }
                 }
                 lyrics == null || lyrics.lines.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     EmptyState(OndaraIcons.Lyrics, "Sin letra", message = "Ningún proveedor tiene la letra de esta canción.",
-                        action = "Buscar de nuevo", onAction = { viewModel.onEvent(LyricsEvent.Retry) })
+                        action = "Buscar de nuevo", onAction = { onEvent(LyricsEvent.Retry) })
                 }
                 !lyrics.synced -> PlainLyrics(lyrics, Modifier, padding)
-                else -> SyncedLyrics(lyrics, viewModel::positionMs, { viewModel.onEvent(LyricsEvent.Seek(it)) }, Modifier, padding)
+                else -> SyncedLyrics(lyrics, positionMs, { onEvent(LyricsEvent.Seek(it)) }, Modifier, padding)
             }
         }
     }

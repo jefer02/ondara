@@ -153,9 +153,14 @@ class LibraryViewModel @Inject constructor(
 @Composable
 fun LibraryScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: LibraryViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    CollectEffects(viewModel.effects) { if (it is LibraryEffect.Navigate) onNavigate(it.nav) }
+    LibraryContent(state, viewModel::onEvent, onNavigate, modifier)
+}
+
+@Composable
+internal fun LibraryContent(state: LibraryUiState, onEvent: (LibraryEvent) -> Unit, onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier) {
     val recent = remember(state.playlists, state.saved, state.source) { recentLibraryItems(state) }
     var creating by remember { mutableStateOf(false) }
-    CollectEffects(viewModel.effects) { if (it is LibraryEffect.Navigate) onNavigate(it.nav) }
     Box(modifier) {
         ScreenScaffold("Biblioteca", actions = { AvatarButton(onClick = { onNavigate(Nav.Account) }) }) {
             item(key = "pins-title", contentType = "heading") { SectionTitle("Fijados") }
@@ -167,22 +172,22 @@ fun LibraryScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, view
                     style = OndaraTheme.type.caption, color = OndaraTheme.colors.onMuted,
                 )
             }
-            libraryGrid(pins, 3, "pins", viewModel::onEvent)
+            libraryGrid(pins, 3, "pins", onEvent)
             items(CATEGORIES, key = { it.id }, contentType = { "category" }) { category ->
                 CategoryRow(category) { onNavigate(Nav.LibraryCategory(category.id)) }
             }
-            item(key = "sources", contentType = "filters") { SourceChips(state.source, viewModel::onEvent) }
+            item(key = "sources", contentType = "filters") { SourceChips(state.source, onEvent) }
             item(key = "recent-title", contentType = "heading") { SectionTitle("Agregado recientemente") }
-            libraryGrid(recent, 2, "recent", viewModel::onEvent)
+            libraryGrid(recent, 2, "recent", onEvent)
             if (state.isEmpty) item(key = "empty", contentType = "empty") {
                 EmptyState(OndaraIcons.Library, "Tu biblioteca empieza aquí", action = "Crear playlist", onAction = { creating = true })
                 OndaraButton("Conectar cuentas", { onNavigate(Nav.Account) }, Modifier.padding(horizontal = OndaraTheme.spacing.screen), style = ButtonStyle.GHOST)
             }
         }
-        PinNotice(state.notice, { viewModel.onEvent(LibraryEvent.DismissNotice) }, Modifier.align(Alignment.BottomCenter))
+        PinNotice(state.notice, { onEvent(LibraryEvent.DismissNotice) }, Modifier.align(Alignment.BottomCenter))
     }
     if (creating) NameDialog("Nueva playlist", "Crear", { creating = false }) { name ->
-        viewModel.onEvent(LibraryEvent.CreatePlaylist(name))
+        onEvent(LibraryEvent.CreatePlaylist(name))
         creating = false
     }
 }

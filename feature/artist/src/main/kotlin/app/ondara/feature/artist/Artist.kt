@@ -105,10 +105,6 @@ class ArtistViewModel @Inject constructor(
 @Composable
 fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: ArtistViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var menu by remember(artistId) { mutableStateOf<Song?>(null) }
-    var info by remember(artistId) { mutableStateOf(false) }
-    var more by remember(artistId) { mutableStateOf(false) }
-    var expanded by remember(artistId) { mutableStateOf(false) }
     val context = LocalContext.current
     LaunchedEffect(artistId) { viewModel.onEvent(ArtistEvent.Load(artistId)) }
     CollectEffects(viewModel.effects) {
@@ -118,6 +114,18 @@ fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier
             )
         }
     }
+    ArtistContent(state, viewModel::onEvent, artistId, onNavigate, modifier)
+}
+
+@Composable
+internal fun ArtistContent(
+    state: ArtistUiState, onEvent: (ArtistEvent) -> Unit, artistId: String,
+    onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier,
+) {
+    var menu by remember(artistId) { mutableStateOf<Song?>(null) }
+    var info by remember(artistId) { mutableStateOf(false) }
+    var more by remember(artistId) { mutableStateOf(false) }
+    var expanded by remember(artistId) { mutableStateOf(false) }
     val page = state.page
     val featured = remember(page) { latestRelease(page) }
     ImmersiveDetail(
@@ -127,7 +135,7 @@ fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier
         topActions = {
             if (page != null) {
                 GlassIconButton(OndaraIcons.Share, "Compartir artista",
-                    { viewModel.onEvent(ArtistEvent.Share) }, size = OndaraTheme.spacing.touch)
+                    { onEvent(ArtistEvent.Share) }, size = OndaraTheme.spacing.touch)
                 GlassIconButton(OndaraIcons.More, "Más opciones", { more = true }, size = OndaraTheme.spacing.touch)
             }
         },
@@ -135,17 +143,17 @@ fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier
             if (page != null) {
                 GlassIconButton(OndaraIcons.Info, "Información del artista", { info = true }, size = OndaraTheme.spacing.touch)
                 CompositionLocalProvider(LocalContentColor provides Color.White) {
-                    GlassIconButton(OndaraIcons.Play, "Reproducir artista", { viewModel.onEvent(ArtistEvent.Play(0)) }, filled = true, size = 64.dp)
+                    GlassIconButton(OndaraIcons.Play, "Reproducir artista", { onEvent(ArtistEvent.Play(0)) }, filled = true, size = 64.dp)
                 }
                 GlassIconButton(if (state.saved) OndaraIcons.StarFilled else OndaraIcons.Star,
-                    if (state.saved) "Dejar de seguir" else "Seguir artista", { viewModel.onEvent(ArtistEvent.Save) }, size = OndaraTheme.spacing.touch)
+                    if (state.saved) "Dejar de seguir" else "Seguir artista", { onEvent(ArtistEvent.Save) }, size = OndaraTheme.spacing.touch)
             }
         },
     ) {
         if (state.loading && page == null) items(6, key = { "sk$it" }, contentType = { "skeleton" }) { SongRowSkeleton() }
         if (page != null) {
             if (featured != null) item(key = "featured", contentType = "release") {
-                FeaturedRelease(featured, { onNavigate(Nav.Album(featured.id)) }, { viewModel.onEvent(ArtistEvent.SaveRelease(featured)) })
+                FeaturedRelease(featured, { onNavigate(Nav.Album(featured.id)) }, { onEvent(ArtistEvent.SaveRelease(featured)) })
             }
             if (page.topSongs.isNotEmpty()) {
                 item(key = "top", contentType = "heading") {
@@ -156,7 +164,7 @@ fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier
                 items(if (expanded) page.topSongs.size else minOf(5, page.topSongs.size),
                     key = { "song-$it-${page.topSongs[it].id}" }, contentType = { "song" }) { i ->
                     GlassCard(contentPadding = PaddingValues(0.dp)) {
-                        ImmersiveSongRow(page.topSongs[i], i + 1, { viewModel.onEvent(ArtistEvent.Play(i)) }, { menu = page.topSongs[i] })
+                        ImmersiveSongRow(page.topSongs[i], i + 1, { onEvent(ArtistEvent.Play(i)) }, { menu = page.topSongs[i] })
                     }
                 }
                 if (page.topSongs.size > 5) item(key = "expand", contentType = "action") {
@@ -166,23 +174,23 @@ fun ArtistScreen(artistId: String, onNavigate: (Nav) -> Unit, modifier: Modifier
             items(page.shelves.size, key = { "shelf-$it" }, contentType = { "shelf" }) { i ->
                 GlassCard(Modifier.padding(top = OndaraTheme.spacing.md)) {
                     Shelf(page.shelves[i], { item ->
-                        item.toNav()?.let(onNavigate) ?: (item as? MusicItem.SongItem)?.let { viewModel.onEvent(ArtistEvent.PlaySong(it.song)) }
+                        item.toNav()?.let(onNavigate) ?: (item as? MusicItem.SongItem)?.let { onEvent(ArtistEvent.PlaySong(it.song)) }
                     })
                 }
             }
         }
         if (state.error != null) item(key = "error", contentType = "error") {
             EmptyState(OndaraIcons.Person, "No se pudo abrir el artista", message = state.error)
-            OndaraButton("Reintentar", { viewModel.onEvent(ArtistEvent.Load(artistId, true)) })
+            OndaraButton("Reintentar", { onEvent(ArtistEvent.Load(artistId, true)) })
         }
     }
     if (info) AboutSheet("Acerca de ${page?.artist?.name.orEmpty()}",
         listOfNotNull(page?.description ?: "Sin descripción disponible", page?.artist?.subscribers?.let { "$it suscriptores" }).joinToString("\n\n")) { info = false }
     if (more) OndaraSheet({ more = false }, title = page?.artist?.name) {
-        MenuAction(OndaraIcons.Download, "Descargar canciones populares", { viewModel.onEvent(ArtistEvent.Download); more = false })
-        MenuAction(OndaraIcons.Star, if (state.pinned) "Desfijar de Biblioteca" else "Fijar en Biblioteca", { viewModel.onEvent(ArtistEvent.Pin); more = false })
-        MenuAction(OndaraIcons.Shuffle, "Reproducción aleatoria", { viewModel.onEvent(ArtistEvent.Play(0, true)); more = false })
-        MenuAction(OndaraIcons.Radio, "Iniciar radio", { viewModel.onEvent(ArtistEvent.Radio); more = false })
+        MenuAction(OndaraIcons.Download, "Descargar canciones populares", { onEvent(ArtistEvent.Download); more = false })
+        MenuAction(OndaraIcons.Star, if (state.pinned) "Desfijar de Biblioteca" else "Fijar en Biblioteca", { onEvent(ArtistEvent.Pin); more = false })
+        MenuAction(OndaraIcons.Shuffle, "Reproducción aleatoria", { onEvent(ArtistEvent.Play(0, true)); more = false })
+        MenuAction(OndaraIcons.Radio, "Iniciar radio", { onEvent(ArtistEvent.Radio); more = false })
     }
     menu?.let { song -> SongMenuSheet(song, { menu = null }, { onNavigate(Nav.Artist(it)) }, { onNavigate(Nav.Album(it)) }) }
 }

@@ -137,11 +137,16 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 @Composable
 fun HomeScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: HomeViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val send = viewModel::onEvent
-    val name = state.settings?.profileName.orEmpty().trim()
-    val subtitle = greeting() + if (name.isEmpty()) " · Tu música, en otra frecuencia." else ", $name · Tu música, en otra frecuencia."
-    val pickWidth = LocalConfiguration.current.screenWidthDp.dp * 0.7f
     CollectEffects(viewModel.effects) { if (it is HomeEffect.Navigate) onNavigate(it.nav) }
+    HomeContent(state, viewModel::onEvent, modifier)
+}
+
+@Composable
+internal fun HomeContent(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modifier: Modifier = Modifier, greetingText: String = greeting()) {
+    val send = onEvent
+    val name = state.settings?.profileName.orEmpty().trim()
+    val subtitle = greetingText + if (name.isEmpty()) " · Tu música, en otra frecuencia." else ", $name · Tu música, en otra frecuencia."
+    val pickWidth = LocalConfiguration.current.screenWidthDp.dp * 0.7f
     ScreenScaffold("Inicio", modifier, subtitle = subtitle, actions = { AvatarButton(onClick = { send(HomeEvent.Navigate(Nav.Account)) }) }) {
         if (!state.connected && state.settings?.accountsBannerDismissed == false) {
             item(key = "accounts", contentType = "banner") { AccountsBanner(send) }

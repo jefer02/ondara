@@ -87,20 +87,32 @@ fun ProfileScreen(
             } catch (error: Exception) { event(ProfileEvent.Error("No se pudo compartir: ${error.message}")) }
         }
     }
+    ProfileContent(state, event, modifier,
+        bentoModifier = Modifier.drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) },
+        onChooseAvatar = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+    )
+}
+
+@Composable
+internal fun ProfileContent(
+    state: ProfileUiState, onEvent: (ProfileEvent) -> Unit, modifier: Modifier = Modifier,
+    bentoModifier: Modifier = Modifier, onChooseAvatar: () -> Unit = {},
+) {
+    val event = onEvent
     ScreenScaffold("Perfil", modifier, onBack = { event(ProfileEvent.Back) }, actions = {
         OndaraIconButton(OndaraIcons.Edit, "Editar perfil", { event(ProfileEvent.Edit) })
         OndaraIconButton(OndaraIcons.Share, "Compartir perfil", { event(ProfileEvent.Share) }, enabled = !state.loading)
     }) {
         item(key = "bento", contentType = "perfil") {
             if (state.loading) Skeleton(Modifier.fillMaxWidth().height(OndaraTheme.spacing.touch * 8))
-            else ProfileBento(state, { event(ProfileEvent.Play) }, Modifier.drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) })
+            else ProfileBento(state, { event(ProfileEvent.Play) }, bentoModifier)
         }
         item(key = "error", contentType = "error") { ErrorMessage(state.error) }
     }
     if (state.editing) OndaraDialog("Editar perfil", { event(ProfileEvent.CancelEdit) }, "Guardar", { event(ProfileEvent.SaveName) }) {
         OndaraTextField(state.name, { event(ProfileEvent.Name(it)) }, placeholder = "Nombre")
         Avatar(state.settings.profileName, state.settings.avatarPath, size = 64.dp)
-        OndaraButton("Elegir foto", { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+        OndaraButton("Elegir foto", { onChooseAvatar() })
         OndaraButton("Usar iniciales", { event(ProfileEvent.Initials) }, style = ButtonStyle.GHOST)
         ErrorMessage(state.error)
     }
