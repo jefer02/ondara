@@ -35,6 +35,8 @@ data class ResolvedVideo(
     val source: String,
     /** Autor declarado por el extractor, para validar el respaldo de canvas. */
     val author: String? = null,
+    /** Pista de mayor resolución para el modo completo, a partir de 720p. */
+    val fullVideo: VideoStream? = null,
 ) {
     /** Hay algo que pintar: una pista de solo vídeo o, en su defecto, la progresiva. */
     val hasVideo: Boolean get() = videoOnly != null || muxed != null
@@ -175,6 +177,8 @@ internal object VideoSelection {
     ): ResolvedVideo {
         val background = pickBackground(videoOnly)
         val progressive = pickMuxed(muxed)
+        val full = sequenceOf(videoOnly, muxed).flatten().filter { it.height >= 720 }
+            .maxWithOrNull(compareBy<VideoCandidate> { it.height }.thenBy { -codecRank(it.mimeType) }.thenBy { it.bitrate })
         check(background != null || progressive != null) { "$source: sin pistas de vídeo con URL directa" }
         return ResolvedVideo(
             videoId = videoId,
@@ -183,9 +187,10 @@ internal object VideoSelection {
             audioUrl = audioUrl,
             isArtTrack = isArtTrack,
             durationSec = durationSec,
-            expiresAtMs = expiresAtMs(listOfNotNull(background?.url, progressive?.url, audioUrl)),
+            expiresAtMs = expiresAtMs(listOfNotNull(background?.url, progressive?.url, full?.url, audioUrl)),
             source = source,
             author = author,
+            fullVideo = full?.toStream(),
         )
     }
 }

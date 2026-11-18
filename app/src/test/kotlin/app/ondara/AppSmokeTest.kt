@@ -3,6 +3,7 @@ package app.ondara
 import android.graphics.Bitmap
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -164,6 +165,39 @@ class AppSmokeTest {
         settle()
         compose.onNodeWithText("Tu biblioteca empieza aquí").assertIsDisplayed()
         compose.onAllNodesWithText("Biblioteca").onFirst().assertIsDisplayed()
+    }
+
+    @Test
+    fun pestanasRespondenDespuesDeAjustesYTemas() {
+        compose.mainClock.autoAdvance = false
+        settle(2_500)
+        compose.onNodeWithText("Omitir").performClick()
+        settle(2_000)
+        val tabs = listOf(
+            "Inicio" to "Tu música, en otra frecuencia.",
+            "Novedades" to "Novedades",
+            "Radio" to "Ondara Flow",
+            "Biblioteca" to "Tu biblioteca empieza aquí",
+            "Buscar" to "Artistas, canciones, letras y más",
+        )
+        tabs.forEach { (tab, marker) ->
+            compose.onNodeWithContentDescription(tab).performClick()
+            settle()
+            compose.onAllNodesWithText(marker, substring = true).onFirst().assertIsDisplayed()
+            for (screen in listOf("Ajustes", "Temas")) {
+                compose.onNodeWithContentDescription("Cuenta, sin cuentas conectadas").performClick()
+                settle()
+                compose.onNodeWithText(screen).performClick()
+                settle()
+                compose.onAllNodesWithContentDescription(tab).assertCountEquals(0)
+                compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+                settle()
+                compose.onAllNodesWithText(marker, substring = true).onFirst().assertIsDisplayed()
+            }
+            compose.onNodeWithContentDescription("Inicio").performClick()
+            settle()
+            compose.onNodeWithText("Tu música, en otra frecuencia.", substring = true).assertIsDisplayed()
+        }
     }
 
     private companion object {

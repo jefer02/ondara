@@ -8,6 +8,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import org.junit.Assert.assertTrue
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.designsystem.theme.ThemeJson
 import app.ondara.core.model.*
@@ -48,6 +51,7 @@ class LyricsScreenshotTest(private val themeId: String) {
             lyrics = Lyrics(lines, synced = true, provider = "Letra de prueba"), translate = true,
         )
         val spec = ThemeJson.decode(File("../../core/designsystem/src/main/assets/themes/$themeId.json").readText())
+        var closed = false
         compose.mainClock.autoAdvance = false
         compose.setContent {
             OndaraTheme(spec, reduceMotion = false, animateColors = false) {
@@ -55,13 +59,15 @@ class LyricsScreenshotTest(private val themeId: String) {
                 androidx.compose.foundation.layout.Box(
                     androidx.compose.ui.Modifier.fillMaxSize().background(OndaraTheme.colors.background),
                 ) {
-                    LyricsContent(state, {}, { 5500L })
+                    LyricsContent(state, {}, { 5500L }, onClose = { closed = true })
                 }
             }
         }
         compose.mainClock.advanceTimeBy(1_500)
         compose.onAllNodesWithContentDescription("Seguimos la luz", substring = true).onFirst().assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/lyrics_$themeId.png")
+        compose.onNodeWithContentDescription("Cerrar letra").assertIsDisplayed().performClick()
+        assertTrue(closed)
     }
 
     companion object {

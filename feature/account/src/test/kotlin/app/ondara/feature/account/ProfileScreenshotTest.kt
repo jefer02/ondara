@@ -41,7 +41,7 @@ class ProfileScreenshotTest(private val themeId: String) {
         val state = ProfileUiState(
             loading = false, settings = UserSettings(profileName = "Luna", joinedAtMs = 1_700_000_000_000L),
             stats = ListeningStats(minutesThisMonth = 1248, topGenre = "Indie", mood = Mood.CALM,
-                songOfTheDay = song, topArtist = Artist("aurora", "Aurora")),
+                songOfTheDay = song),
         )
         val spec = ThemeJson.decode(File("../../core/designsystem/src/main/assets/themes/$themeId.json").readText())
         compose.mainClock.autoAdvance = false

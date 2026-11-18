@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -35,15 +34,20 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -59,6 +63,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.ondara.core.designsystem.icon.Icon
 import app.ondara.core.designsystem.icon.OndaraIcons
+import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.LocalContentColor
 import app.ondara.core.designsystem.theme.OndaraTheme
 import dev.chrisbanes.haze.HazeProgressive
@@ -99,6 +104,7 @@ fun ImmersiveHeroScaffold(
     onBack: () -> Unit,
     hero: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
+    artworkTop: Color = pageColor,
     eyebrow: String? = null,
     meta: String? = null,
     listState: LazyListState = rememberLazyListState(),
@@ -145,8 +151,9 @@ fun ImmersiveHeroScaffold(
     }
     val chrome = LocalChromeState.current
     val collapsed: () -> Float = { ((scroll - (heroPx - barPx * 1.6f)) / (barPx * 0.6f)).coerceIn(0f, 1f) }
+    val compact by remember(heroPx, barPx, listState) { derivedStateOf { collapsed() >= 1f } }
 
-    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    CompositionLocalProvider(LocalContentColor provides contentColor, LocalGlassBackdrop provides pageColor) {
         Box(modifier.fillMaxSize().background(pageColor).padding(start = LocalStartInset.current)) {
             // Capa 1: imagen héroe con parallax y stretch; es la fuente del vidrio de la cabecera.
             Box(
@@ -212,7 +219,17 @@ fun ImmersiveHeroScaffold(
                 ) {
                     item(key = "__hero", contentType = "hero") {
                         Column(
-                            Modifier.fillMaxWidth().height(heroHeight).padding(horizontal = OndaraTheme.spacing.screen).padding(bottom = OndaraTheme.spacing.lg),
+                            Modifier.fillMaxWidth().height(heroHeight)
+                                .graphicsLayer {
+                                    translationY = if (motion.reduced) 0f else scroll * HERO_PARALLAX
+                                    alpha = (1f - scroll / (heroPx - barPx).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                }
+                                .drawWithContent {
+                                    val parallax = if (motion.reduced) 0f else scroll * HERO_PARALLAX
+                                    val top = (barPx + scroll - parallax - pull.value).coerceAtLeast(0f)
+                                    if (top < size.height) clipRect(top = top) { this@drawWithContent.drawContent() }
+                                }
+                                .padding(horizontal = OndaraTheme.spacing.screen).padding(bottom = OndaraTheme.spacing.lg),
                             verticalArrangement = Arrangement.Bottom,
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
@@ -232,7 +249,7 @@ fun ImmersiveHeroScaffold(
                             )
                             if (meta != null) {
                                 Spacer(Modifier.height(OndaraTheme.spacing.xs))
-                                Text(meta, style = OndaraTheme.type.caption, color = contentColor.copy(alpha = 0.78f), maxLines = 2, textAlign = TextAlign.Center)
+                                Text(meta, style = OndaraTheme.type.caption, color = secondaryOn(contentColor, pageColor), maxLines = 2, textAlign = TextAlign.Center)
                             }
                             Spacer(Modifier.height(OndaraTheme.spacing.lg))
                             Row(
@@ -248,11 +265,11 @@ fun ImmersiveHeroScaffold(
                 // Barra superior: vidrio con el nombre pequeño, aparece al pasar la imagen.
                 Box(Modifier.fillMaxWidth().height(status + TopBarHeight)) {
                     Box(
-                        Modifier.fillMaxSize().graphicsLayer { alpha = collapsed() }.background(pageColor.copy(alpha = if (blur) 0.86f else 1f)),
+                        Modifier.fillMaxSize().graphicsLayer { alpha = collapsed() }.background(pageColor.copy(alpha = .9f)),
                     )
                     Text(
                         title,
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 15.dp).widthIn(max = 200.dp).graphicsLayer {
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 15.dp, start = OndaraTheme.spacing.touch * 3, end = OndaraTheme.spacing.touch * 3).graphicsLayer {
                             val c = collapsed()
                             alpha = c
                             translationY = (1f - c) * 10.dp.toPx()
@@ -260,15 +277,21 @@ fun ImmersiveHeroScaffold(
                         style = OndaraTheme.type.headline,
                         color = contentColor,
                         maxLines = 1,
+                        textAlign = TextAlign.Center,
                     )
                     Row(
                         Modifier.fillMaxWidth().statusBarsPadding().height(TopBarHeight).padding(horizontal = OndaraTheme.spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.sm),
                     ) {
-                        GlassIconButton(OndaraIcons.Back, "Atrás", onBack, size = 40.dp)
-                        Spacer(Modifier.weight(1f))
-                        topActions()
+                        CompositionLocalProvider(
+                            LocalGlassBackdrop provides if (compact) pageColor else artworkTop,
+                            LocalCompactGlass provides compact,
+                        ) {
+                            GlassIconButton(OndaraIcons.Back, "Atrás", onBack, size = OndaraTheme.spacing.touch)
+                            Spacer(Modifier.weight(1f))
+                            topActions()
+                        }
                     }
                 }
             }
@@ -277,6 +300,7 @@ fun ImmersiveHeroScaffold(
 }
 
 private const val PULL_RESISTANCE = 0.5f
+private const val HERO_PARALLAX = 0.25f
 
 /** Compone un tinte translúcido sobre un fondo opaco (para vidrios sin fuente de blur). */
 private fun Color.compositeOverSafe(background: Color): Color {
@@ -301,33 +325,49 @@ fun GlassIconButton(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     filled: Boolean = false,
-    tint: Color = LocalContentColor.current,
-    active: Boolean = false,
 ) {
-    val content = LocalContentColor.current
+    val (glass, foreground) = immersiveGlass(LocalGlassBackdrop.current ?: OndaraTheme.colors.surface)
     val base = modifier
         .pressable(haptic = true, onClick = onClick)
         .semantics { this.contentDescription = contentDescription }
-        .size(size)
-    if (filled) {
-        Box(base.clip(CircleShape).background(content), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = if (content.luminanceApprox() > 0.5f) Color(0xFF101014) else Color.White, size = size * 0.42f)
-        }
-    } else {
-        GlassSurface(base, shape = CircleShape, tint = content.copy(alpha = 0.22f), contentColor = content, contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = if (active) OndaraTheme.colors.accent else tint, size = size * 0.46f)
-        }
+        .size(maxOf(size, OndaraTheme.spacing.touch))
+    Box(
+        base.clip(CircleShape).background(if (filled) foreground else if (LocalCompactGlass.current) Color.Transparent else glass),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, null, tint = if (filled) glass.copy(alpha = 1f) else foreground, size = size * .46f)
     }
 }
 
-private fun Color.luminanceApprox(): Float = 0.299f * red + 0.587f * green + 0.114f * blue
+private val LocalGlassBackdrop = compositionLocalOf<Color?> { null }
+private val LocalCompactGlass = compositionLocalOf { false }
+
+/** Un tinte del 60 % mantiene AA incluso sobre un píxel de luminancia opuesta. O(1). */
+internal fun immersiveGlass(background: Color): Pair<Color, Color> {
+    val argb = background.toArgb()
+    val light = ColorMath.luminance(argb) >= .179
+    return if (light) Color.White.copy(alpha = .6f) to Color.Black else Color.Black.copy(alpha = .6f) to Color.White
+}
+
+private fun secondaryOn(foreground: Color, background: Color): Color {
+    val muted = foreground.copy(alpha = .7f).compositeOver(background)
+    return Color(ColorMath.ensureContrast(muted.toArgb(), background.toArgb()))
+}
+
+/** Tono secundario sobre el color real de GlassCard. */
+@Composable
+fun ImmersiveSecondaryColor(): Color {
+    val foreground = LocalContentColor.current
+    val background = LocalGlassBackdrop.current ?: OndaraTheme.colors.background
+    return secondaryOn(foreground, foreground.copy(alpha = .09f).compositeOver(background))
+}
 
 /** Píldora de vidrio con texto (Reproducir / Aleatorio en álbum y playlist). */
 @Composable
 fun GlassPillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, filled: Boolean = false) {
-    val content = LocalContentColor.current
+    val (glass, foreground) = immersiveGlass(LocalGlassBackdrop.current ?: OndaraTheme.colors.surface)
     val inner: @Composable BoxScope.() -> Unit = {
-        val fg = if (filled) (if (content.luminanceApprox() > 0.5f) Color(0xFF101014) else Color.White) else content
+        val fg = if (filled) glass.copy(alpha = 1f) else foreground
         Row(Modifier.padding(horizontal = OndaraTheme.spacing.xl, vertical = OndaraTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Icon(icon, null, tint = fg, size = 18.dp)
@@ -337,11 +377,7 @@ fun GlassPillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
         }
     }
     val base = modifier.pressable(haptic = true, onClick = onClick)
-    if (filled) {
-        Box(base.clip(CircleShape).background(content), contentAlignment = Alignment.Center, content = inner)
-    } else {
-        GlassSurface(base, shape = CircleShape, tint = content.copy(alpha = 0.22f), contentColor = content, contentAlignment = Alignment.Center, content = inner)
-    }
+    Box(base.clip(CircleShape).background(if (filled) foreground else glass), contentAlignment = Alignment.Center, content = inner)
 }
 
 /**

@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,7 +66,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -139,7 +140,7 @@ class AppViewModel @Inject constructor(
             haptics = prefs.haptics,
             nowPlaying = NowPlaying(songId, playing),
             artworkUrl = artwork,
-            profile = ProfileBadge(prefs.profileName, prefs.avatarPath, linked.anyConnected),
+            profile = ProfileBadge(prefs, linked.anyConnected),
             ditherArtwork = prefs.ditherArtwork,
             onboardingDone = prefs.onboardingDone,
         )
@@ -216,7 +217,10 @@ private val TABS = listOf(
 private val SEARCH_TAB = NavItem(OndaraIcons.Search, "Buscar")
 
 /** Flujos a pantalla completa: sin barra de pestañas ni mini-reproductor. */
-private val FULLSCREEN_ROUTES = listOf(OnboardingRoute::class, LoginRoute::class, SpotifyConnectRoute::class)
+private val FULLSCREEN_ROUTES = listOf(
+    OnboardingRoute::class, LoginRoute::class, SpotifyConnectRoute::class, SettingsRoute::class,
+    ThemesRoute::class, ThemeEditorRoute::class, PlayerSettingsRoute::class, ProfileRoute::class, AboutRoute::class,
+)
 
 @Composable
 private fun OndaraRoot(viewModel: AppViewModel) {
@@ -260,16 +264,17 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
     val chrome = rememberChromeState()
     var playerExpanded by rememberSaveable { mutableStateOf(false) }
     var accountOpen by rememberSaveable { mutableStateOf(false) }
+    var homeScrollRequest by rememberSaveable { mutableIntStateOf(0) }
     var notice by remember { mutableStateOf<String?>(null) }
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val rail = theme.navigation == NavStyle.SIDE_RAIL
     val pill = theme.navigation == NavStyle.FLOATING_GLASS_PILL
     val entry by navController.currentBackStackEntryAsState()
     val destination = entry?.destination
-    val fullscreen = FULLSCREEN_ROUTES.any { destination?.hasRoute(it) == true }
+    val fullscreen = FULLSCREEN_ROUTES.any { destination?.hierarchy?.any { node -> node.hasRoute(it) } == true }
     val selected = when {
-        destination?.hasRoute(SearchRoute::class) == true -> TABS.size
-        else -> TABS.indexOfFirst { (_, route) -> destination?.hasRoute(route::class) == true }
+        destination?.hierarchy?.any { it.hasRoute(SearchRoute::class) } == true -> TABS.size
+        else -> TABS.indexOfFirst { (_, route) -> destination?.hierarchy?.any { it.hasRoute(route::class) } == true }
     }
     val collapsed = pill && chrome.collapsed
     val navHeight = when {
@@ -283,11 +288,16 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
     val bottomInset = systemBottom + navHeight + if (hasPlayer) MiniPlayerHeight + 12.dp else 0.dp
 
     fun selectTab(route: Any) {
+        accountOpen = false
         chrome.expand()
-        navController.navigate(route) {
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+        if (route == HomeRoute) {
+            navController.popBackStack(HomeRoute, inclusive = false)
+            homeScrollRequest++
+        } else if (navController.currentDestination?.hierarchy?.any { it.hasRoute(route::class) } != true) {
+            navController.navigate(route) {
+                popUpTo<HomeRoute>()
+                launchSingleTop = true
+            }
         }
     }
     val onNavigate: (Nav) -> Unit = { nav ->
@@ -335,7 +345,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
         ) {
             CompositionLocalProvider(
                 LocalBottomInset provides bottomInset,
-                LocalStartInset provides if (rail) RailWidth + 1.dp else 0.dp,
+                LocalStartInset provides if (rail && !fullscreen) RailWidth + 1.dp else 0.dp,
                 LocalChromeState provides chrome,
                 // Dentro de la fuente de la app no puede haber efectos de su haze: cada pantalla usa el suyo.
                 LocalHazeState provides null,
@@ -343,6 +353,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
                 OndaraNavHost(
                     navController,
                     onNavigate,
+                    homeScrollRequest = homeScrollRequest,
                     onOnboardingFinished = {
                         viewModel.finishOnboarding()
                         navController.popBackStack(HomeRoute, inclusive = false)
@@ -353,7 +364,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
             if (!fullscreen && !rail) BottomFade(bottomInset + 28.dp, Modifier.align(Alignment.BottomCenter))
         }
 
-        CompositionLocalProvider(LocalHazeState provides haze, LocalStartInset provides if (rail) RailWidth + 1.dp else 0.dp) {
+        CompositionLocalProvider(LocalHazeState provides haze, LocalStartInset provides if (rail && !fullscreen) RailWidth + 1.dp else 0.dp) {
             if (!fullscreen && (!playerExpanded || rail)) {
                 OndaraNavigation(
                     items = remember { TABS.map { it.first } },
@@ -362,7 +373,9 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
                     modifier = Modifier.align(if (rail) Alignment.CenterStart else Alignment.BottomCenter),
                     search = SEARCH_TAB,
                     collapsed = collapsed,
-                    onExpand = { chrome.expand() },
+                    onExpand = {
+                        if (TABS.getOrNull(selected)?.second == HomeRoute) selectTab(HomeRoute) else chrome.expand()
+                    },
                 )
             }
             if (!fullscreen) {
@@ -385,7 +398,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
                     onNavigate = onNavigate,
                     lyrics = remember {
                         LyricsSlots(
-                            full = { modifier -> LyricsView(modifier) },
+                            full = { modifier, close -> LyricsView(modifier, onClose = close) },
                             currentLine = { modifier -> CurrentLyricLine(modifier) },
                             preview = { modifier -> LyricsPreview(modifier) },
                         )
@@ -393,7 +406,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
                 )
             }
             // Hoja de Cuenta: vidrio real (hermana de la fuente), crece desde la esquina del avatar.
-            GlassOverlaySheet(accountOpen, { accountOpen = false }, origin = TransformOrigin(0.92f, 0f)) {
+            if (!fullscreen) GlassOverlaySheet(accountOpen, { accountOpen = false }, origin = TransformOrigin(0.92f, 0f)) {
                 AccountSheetContent(onNavigate = onNavigate, onDismiss = { accountOpen = false })
             }
             notice?.let { text ->

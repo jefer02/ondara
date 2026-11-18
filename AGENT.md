@@ -302,3 +302,33 @@ Fuera de alcance de la v0.1, con la interfaz ya definida en `core/domain/Future.
 
 Otros pendientes: PoToken propio como estrategia adicional, descarga por rangos para evitar
 *throttling*, Google Cast, portadas en el widget.
+
+## Decisiones v4
+
+51. **Cine y ciclo de vida**. Se eliminó el estado local que alternaba la visibilidad de los controles y la
+    animación que lo consumía. Ese valor sobrevivía mientras la composición seguía activa, incluso al cambiar
+    de canción o volver del segundo plano. La portada y las ranuras `TextureView` quedan detrás de los controles.
+    El doble toque conserva los saltos de 10 s. La regresión usa una Activity de Robolectric y cambia al estado
+    `CREATED` antes de volver a `RESUMED`.
+52. **Reproductor desplazable**. El bloque principal mide lo mismo que el viewport en los seis layouts y
+    consume sus insets dentro de ese bloque. La vista previa, los créditos y el artista empiezan después.
+    La vista previa sincronizada consulta el índice en O(log n) y dibuja una ventana de hasta cinco líneas.
+    `MarqueeText` mide en O(n) al cambiar el texto, el estilo o el ancho y aplica la máscara solo si hay desborde.
+53. **Letras completas**. La vista se superpone a todo el reproductor e incluye su propio encabezado con insets.
+    El arrastre hacia abajo en el encabezado, o desde el inicio de la lista, cierra la vista. El fondo ocupa el
+    área bajo ambas barras del sistema.
+54. **Video completo**. El controlador de canvas comparte superficies y conserva la reproducción de audio como
+    reloj. El resolver prueba el video de la canción y después candidatos compatibles por artista, título y
+    duración. La selección HD es O(n) sobre los formatos de la respuesta. Si aparece la oferta, el modo completo
+    respeta el Wi‑Fi y corrige desviaciones de más de 150 ms. Una rotación conserva la elección de la canción
+    actual, y la vista compacta deja espacio para los controles.
+55. **Foto de perfil**. El Photo Picker entrega una URI temporal al recortador. Solo la ruta del PNG, los ajustes
+    de efecto y la revisión se persisten al final de `UserSettings`. El recorte se guarda de forma atómica con
+    un máximo de 1024 px. La caché del efecto usa la foto, la revisión, los tonos y el tamaño como clave. Procesa
+    el Bayer 4×4 en O(n²) sobre un mosaico de n×n y lo amplía sin interpolación.
+56. **Detalle inmersivo**. Palette conserva extremos claros y oscuros y calcula el dominante de la franja
+    superior. El tinte de los botones garantiza AA incluso en zonas de la portada con luminancia opuesta.
+    El héroe se recorta en la fase de dibujo antes de invadir la barra, que reutiliza los controles superiores.
+57. **Navegación**. La selección usa la jerarquía de destinos tipados. Las pantallas de Cuenta se abren encima
+    de la pestaña y el historial ordinario las devuelve a ella. Cambiar de pestaña descarta el tramo anterior
+    sobre Inicio. Tocar Inicio hace pop a su entrada raíz y dispara el desplazamiento al comienzo.

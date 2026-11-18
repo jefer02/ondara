@@ -66,6 +66,19 @@ object ColorMath {
         return mix(fg, target, hi)
     }
 
+    /** Oscurece el fondo para que el blanco, incluso con alfa, alcance AA. O(log(1/ε)). */
+    fun darkenedForWhite(background: Int, foregroundAlpha: Float): Int {
+        val white = ((foregroundAlpha * 255).roundToInt() shl 24) or 0xFFFFFF
+        var low = 0f
+        var high = 1f
+        repeat(12) {
+            val fraction = (low + high) / 2
+            val mixed = mix(background, 0xFF000000.toInt(), fraction)
+            if (contrast(composite(white, mixed), mixed) >= AA_TEXT) high = fraction else low = fraction
+        }
+        return mix(background, 0xFF000000.toInt(), high)
+    }
+
     /** Blanco o negro, el que más contraste dé sobre [bg]. */
     fun onColor(bg: Int): Int = if (luminance(bg) > 0.4) 0xFF101010.toInt() else 0xFFFFFFFF.toInt()
 

@@ -343,11 +343,6 @@ class PersonalRepositoryImpl @Inject constructor(
         val month = library.playsSince(startOf(Calendar.DAY_OF_MONTH))
         val week = library.playsSince(now - WEEK_MS)
         val rankedArtists = month.ifEmpty { recent }.mapNotNull { it.artists.firstOrNull() }.rankBy { it.name.lowercase() }
-        val topArtist = rankedArtists.firstOrNull()?.first?.let { ref ->
-            val page = ref.id?.let { artistPage(it) }
-            val fallback = recent.firstOrNull { s -> s.artists.firstOrNull()?.name == ref.name }?.thumbnailUrl
-            Artist(ref.id ?: ref.name, ref.name, page?.artist?.thumbnailUrl ?: fallback)
-        }
         // Género: etiquetas de los 3 artistas más escuchados, ponderadas por reproducciones.
         val genreVotes = HashMap<String, Int>()
         for ((ref, count) in rankedArtists.take(GENRE_ARTISTS)) {
@@ -361,10 +356,8 @@ class PersonalRepositoryImpl @Inject constructor(
             // Aproximación: cada reproducción cuenta la duración completa de la canción.
             minutesThisMonth = (month.sumOf { it.durationSec.toLong() } / 60).toInt(),
             topGenre = genreVotes.maxByOrNull { it.value }?.key?.replaceFirstChar { it.uppercase() },
-            topArtist = topArtist,
             mood = MoodClassifier.dominant(moodVotes),
             songOfTheDay = if (pool.isEmpty()) null else pool[Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % pool.size],
-            topArtworks = topSongs.mapNotNull { it.thumbnailUrl }.distinct().take(ARTWORKS),
         )
     }
 
@@ -381,7 +374,6 @@ class PersonalRepositoryImpl @Inject constructor(
         const val STATION_TOP = 5
         const val GENRE_ARTISTS = 3
         const val SONG_OF_DAY_POOL = 30
-        const val ARTWORKS = 6
         val CALM_WORDS = listOf("calma", "chill", "relax", "relaj", "tranquil")
         val MIXES = listOf(
             MixIds.FAVORITES_MIX to "Mix Favoritos",

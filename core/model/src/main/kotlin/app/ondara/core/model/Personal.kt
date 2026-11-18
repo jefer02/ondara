@@ -44,11 +44,8 @@ enum class Mood { HAPPY, CALM, ENERGETIC, MELANCHOLY, NEUTRAL }
 data class ListeningStats(
     val minutesThisMonth: Int = 0,
     val topGenre: String? = null,
-    val topArtist: Artist? = null,
     val mood: Mood = Mood.NEUTRAL,
     val songOfTheDay: Song? = null,
-    /** Portadas más escuchadas (de ellas sale "Tu paleta"). */
-    val topArtworks: List<String> = emptyList(),
 )
 
 /** Elemento guardado en la biblioteca (álbum o artista seguido) con su fecha. */

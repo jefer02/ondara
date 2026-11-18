@@ -18,33 +18,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.palette.graphics.Palette
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.HandDrawnIcons
 import app.ondara.core.designsystem.icon.Icon
 import app.ondara.core.designsystem.icon.OndaraIcons
-import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.model.Mood
 import app.ondara.core.ui.*
-import coil3.SingletonImageLoader
-import coil3.request.ImageRequest
-import coil3.request.SuccessResult
-import coil3.request.allowHardware
-import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -63,7 +55,7 @@ fun ProfileScreen(
     val event = viewModel::onEvent
     val layer = rememberGraphicsLayer()
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { event(ProfileEvent.Avatar(it)) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { event(ProfileEvent.Avatar(it)) } }
     CollectEffects(viewModel.effects) { effect ->
         when (effect) {
             ProfileEffect.Back -> onNavigate(Nav.Back)
@@ -105,47 +97,36 @@ internal fun ProfileContent(
     }) {
         item(key = "bento", contentType = "perfil") {
             if (state.loading) Skeleton(Modifier.fillMaxWidth().height(OndaraTheme.spacing.touch * 8))
-            else ProfileBento(state, { event(ProfileEvent.Play) }, bentoModifier)
+            else ProfileBento(state, { event(ProfileEvent.Play) }, onChooseAvatar, { event(ProfileEvent.Edit) }, bentoModifier)
         }
         item(key = "error", contentType = "error") { ErrorMessage(state.error) }
     }
-    if (state.editing) OndaraDialog("Editar perfil", { event(ProfileEvent.CancelEdit) }, "Guardar", { event(ProfileEvent.SaveName) }) {
+    if (state.editing && state.photo == null) OndaraDialog("Editar perfil", { event(ProfileEvent.CancelEdit) }, "Guardar", { event(ProfileEvent.SaveName) }) {
         OndaraTextField(state.name, { event(ProfileEvent.Name(it)) }, placeholder = "Nombre")
-        Avatar(state.settings.profileName, state.settings.avatarPath, size = 64.dp)
-        OndaraButton("Elegir foto", { onChooseAvatar() })
+        Avatar(ProfileBadge(state.settings), Modifier.pressable(onClickLabel = "Cambiar foto", onClick = onChooseAvatar), size = 64.dp)
+        OndaraButton("Cambiar foto", onChooseAvatar)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Efecto píxel")
+            OndaraSwitch(state.settings.avatarPixelEffect, { event(ProfileEvent.PixelEffect(it)) },
+                Modifier.semantics { contentDescription = "Efecto píxel" })
+        }
+        if (state.settings.avatarPixelEffect) {
+            Text("Tamaño del píxel · ${state.settings.avatarPixelBlocks}")
+            OndaraValueSlider(state.settings.avatarPixelBlocks.toFloat(), { event(ProfileEvent.PixelBlocks(it.roundToInt())) },
+                32f..64f, steps = 2, description = "Tamaño del píxel")
+        }
         OndaraButton("Usar iniciales", { event(ProfileEvent.Initials) }, style = ButtonStyle.GHOST)
         ErrorMessage(state.error)
     }
-}
-
-/** Extrae hasta tres colores de portadas a 96 px fuera del hilo principal. O(k·96²), k ≤ 3. */
-@Composable
-private fun profilePalette(artworks: List<String>): List<Color> {
-    val context = LocalContext.current.applicationContext
-    val palette by produceState<List<Color>>(emptyList(), artworks) {
-        value = withContext(Dispatchers.IO) {
-            artworks.take(3).flatMap { url ->
-                runCatching {
-                    val request = ImageRequest.Builder(context).data(url.thumbnail(96)).size(96).allowHardware(false).build()
-                    val bitmap = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image?.toBitmap()
-                    bitmap?.let {
-                        val swatches = Palette.from(it).maximumColorCount(8).generate()
-                        listOfNotNull(swatches.dominantSwatch, swatches.lightMutedSwatch, swatches.darkMutedSwatch).map { swatch -> Color(swatch.rgb) }
-                    }.orEmpty()
-                }.getOrDefault(emptyList())
-            }.distinct().take(3)
-        }
-    }
-    return palette
+    state.photo?.let { CropProfilePhoto(it, { event(ProfileEvent.CancelCrop) }, { crop -> event(ProfileEvent.SavePhoto(crop)) }) }
 }
 
 @Composable
-private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+private fun ProfileBento(
+    state: ProfileUiState, onPlay: () -> Unit, onChooseAvatar: () -> Unit, onAddName: () -> Unit, modifier: Modifier = Modifier,
+) {
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
-    val extracted = profilePalette(state.stats.topArtworks)
-    val palette = extracted.takeIf { it.size >= 2 } ?: listOf(colors.blockLight, colors.blockMuted)
-    val ordered = palette.sortedBy { ColorMath.luminance(it.toArgb()) }
     val face = when (state.stats.mood) {
         Mood.HAPPY -> HandDrawnIcons.FaceHappy
         Mood.CALM -> HandDrawnIcons.FaceCalm
@@ -158,15 +139,22 @@ private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Mo
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
         Row(Modifier.fillMaxWidth().bentoMotion(0), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
-            Text(state.settings.profileName.ifBlank { "Tu perfil" }, Modifier.weight(1f), style = OndaraTheme.type.display, maxLines = 2)
-            Column(Modifier.weight(1.4f).pressable(enabled = state.stats.songOfTheDay != null, onClick = onPlay).heightIn(min = spacing.touch)) {
+            Avatar(ProfileBadge(state.settings), Modifier.pressable(onClickLabel = "Cambiar foto", onClick = onChooseAvatar)
+                .semantics { contentDescription = "Cambiar foto" }, size = spacing.touch * 2)
+            Column(Modifier.weight(1f)) {
+                Text(state.settings.profileName.ifBlank { "Tu perfil" }, style = OndaraTheme.type.display, maxLines = 2)
+                if (state.settings.profileName.isBlank()) {
+                    OndaraButton("Agregar nombre", onAddName, style = ButtonStyle.GHOST)
+                }
+            }
+            Icon(face, "Ánimo: ${moodLabel(state.stats.mood)}", size = spacing.touch)
+        }
+        Column(Modifier.fillMaxWidth().bentoMotion(1).pressable(enabled = state.stats.songOfTheDay != null, onClick = onPlay).heightIn(min = spacing.touch)) {
                 Text("Canción del día", style = OndaraTheme.type.caption)
                 Text(state.stats.songOfTheDay?.title ?: "Tu próxima favorita", style = OndaraTheme.type.title, maxLines = 3)
-            }
-            Icon(face, "Ánimo: ${moodLabel(state.stats.mood)}", size = 64.dp)
         }
         Row(
-            Modifier.fillMaxWidth().bentoMotion(1).clip(OndaraTheme.shapes.large).background(colors.blockPrimary).padding(spacing.xl),
+            Modifier.fillMaxWidth().bentoMotion(2).clip(OndaraTheme.shapes.large).background(colors.blockPrimary).padding(spacing.xl),
             horizontalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Column(Modifier.weight(1f)) {
@@ -178,32 +166,7 @@ private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Mo
                 Text(state.stats.topGenre ?: "Por descubrir", style = OndaraTheme.type.title, color = colors.onBlock)
             }
         }
-        Text("Tu paleta", style = OndaraTheme.type.caption)
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                palette.forEachIndexed { index, color ->
-                    val foreground = Color(ColorMath.ensureContrast(ColorMath.onColor(color.toArgb()), color.toArgb()))
-                    Box(
-                        Modifier.fillMaxWidth().height(spacing.touch * 1.6f).bentoMotion(index + 2)
-                            .clip(OndaraTheme.shapes.large).background(color).padding(spacing.lg), contentAlignment = Alignment.BottomStart,
-                    ) {
-                        Text(String.format(Locale.ROOT, "#%06X", color.toArgb() and 0xFFFFFF), style = OndaraTheme.type.code, color = foreground)
-                    }
-                }
-            }
-            Box(
-                Modifier.weight(1f).aspectRatio(1f).bentoMotion(5).clip(OndaraTheme.shapes.small).background(colors.blockLight)
-                    .semantics { contentDescription = state.stats.topArtist?.name ?: "Tu artista está por descubrir" },
-                contentAlignment = Alignment.Center,
-            ) {
-                val image = state.stats.topArtist?.thumbnailUrl
-                if (image != null) CompositionLocalProvider(LocalDitherArtwork provides false) {
-                    Artwork(image, Modifier.fillMaxSize().twoToneDither(ordered.first(), ordered.last(), cellDp = 2.5f))
-                }
-                else Icon(OndaraIcons.Wave, null, tint = colors.onBlock, size = 64.dp)
-            }
-        }
-        Row(Modifier.fillMaxWidth().bentoMotion(6), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+        Row(Modifier.fillMaxWidth().bentoMotion(3), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
             Icon(HandDrawnIcons.Person, null, tint = colors.onMuted, size = spacing.touch)
             val joined = state.settings.joinedAtMs.takeIf { it > 0 } ?: state.firstPlay
             val date = remember(joined) { joined?.let { SimpleDateFormat("MMM yyyy", Locale.forLanguageTag("es")).format(Date(it)) } }

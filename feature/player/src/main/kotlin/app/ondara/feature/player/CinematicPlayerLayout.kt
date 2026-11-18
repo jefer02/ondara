@@ -14,13 +14,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.OndaraIcons
@@ -40,33 +39,36 @@ internal fun CinematicPlayerLayout(
     val song = state.player.current ?: return
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
-    var controls by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf("") }
     var added by remember(song.id) { mutableStateOf(false) }
     var wave by remember { mutableStateOf(0L to 0L) }
-    val motion = OndaraTheme.motion
     val haptics = rememberHaptics()
+    val gestures = rememberUpdatedState(onEvent)
+    val offer = state.videoOffer?.takeIf { it.songId == song.id }
+    val compact = LocalConfiguration.current.screenHeightDp.dp < spacing.touch * 10
     BackHandler(panel.isNotEmpty()) { panel = "" }
     Box(Modifier.fillMaxSize().background(colors.background).pointerInput(Unit) {
-        detectTapGestures(onTap = { controls = !controls }, onDoubleTap = {
+        detectTapGestures(onDoubleTap = {
             val delta = doubleTapDelta(it.x, size.width.toFloat())
-            onEvent(PlayerEvent.SeekBy(delta)); wave = System.nanoTime() to delta
+            gestures.value(PlayerEvent.SeekBy(delta)); wave = System.nanoTime() to delta
         })
     }) {
         Box(Modifier.fillMaxSize()) {
             CanvasBackground(
                 state.canvas, state.canvasSurfaces, song.thumbnailUrl,
                 { slot, surface -> onEvent(PlayerEvent.CanvasSurface(slot, surface)) },
-                Modifier.fillMaxSize().then(if (panel == "Letra") Modifier.blur(24.dp) else Modifier),
-                dither = OndaraTheme.spec.ditherArtwork && state.settings.ditherVideo,
+                Modifier.fillMaxSize(),
+                dither = offer?.enabled != true && OndaraTheme.spec.ditherArtwork && state.settings.ditherVideo,
             )
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
-                Color.Black.copy(alpha = .35f), Color.Transparent, Color.Black.copy(alpha = .88f),
-            ))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = .55f),
+                .25f to Color.Transparent,
+                .58f to Color.Black.copy(alpha = .58f),
+                1f to Color.Black.copy(alpha = .88f),
+            )))
             SeekWaves(wave)
         }
-        AnimatedVisibility(controls || panel.isNotEmpty(),
-            enter = fadeIn(motion.spring()), exit = fadeOut(motion.spring())) {
+        PlayerDetails(song, lyrics, { panel = "Letra" }, onNavigate) {
             Column(Modifier.fillMaxSize()
                 .statusBarsPadding().navigationBarsPadding().padding(horizontal = spacing.screen)) {
                 Row(Modifier.fillMaxWidth().then(dragModifier), verticalAlignment = Alignment.CenterVertically) {
@@ -74,12 +76,13 @@ internal fun CinematicPlayerLayout(
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
                             style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
-                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
+                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White, centered = true)
                     }
                     OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
                 }
-                Spacer(Modifier.weight(1f).fillMaxWidth().then(dragModifier))
-                CinematicLyricBox(lyrics.currentLine)
+                Spacer(Modifier.weight(1f).fillMaxWidth())
+                if (!compact) CinematicLyricBox(lyrics.currentLine)
+                if (offer != null) VideoSwitch(offer.enabled, { onEvent(PlayerEvent.ToggleVideo) }, Modifier.align(Alignment.CenterHorizontally))
                 Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
                     Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
                     with(sharedScope) {
@@ -95,22 +98,35 @@ internal fun CinematicPlayerLayout(
                     PlayerTransport(state.player, onEvent,
                         Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
                 }
-                PlayerBottomActions(song, { panel = it }, Color.White)
-                LyricsHandle({ panel = "Letra" }, artworkUrl = song.thumbnailUrl)
-                Spacer(Modifier.height(spacing.lg))
+                if (!compact) {
+                    PlayerScrollHint(Color.White)
+                    PlayerBottomActions(song, { panel = it }, Color.White)
+                    Spacer(Modifier.height(spacing.lg))
+                }
             }
         }
         if (panel == "Cola") QueuePanel(state.player, onEvent) { panel = "" }
-        if (panel == "Letra") {
-            Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .8f)).statusBarsPadding().navigationBarsPadding()) {
-                OndaraIconButton(OndaraIcons.Close, "Cerrar letra", { panel = "" }, tint = Color.White)
-                lyrics.full(Modifier.fillMaxWidth().weight(1f))
-            }
-        }
+        if (panel == "Letra") PlayerLyricsOverlay(lyrics) { panel = "" }
     }
     if (panel == "Temporizador") PlayerTimer(state.player, onEvent) { panel = "" }
     if (panel == "Menú") SongMenuSheet(song, { panel = "" }, { onNavigate(Nav.Artist(it)) }, { onNavigate(Nav.Album(it)) })
     if (panel == "Playlist") PlayerPlaylistPicker(song, { panel = "" }, onAdded = { added = true; haptics.confirm(); panel = "" })
+}
+
+@Composable
+private fun VideoSwitch(video: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier.heightIn(min = OndaraTheme.spacing.touch).pressable(haptic = true, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(shape = OndaraTheme.shapes.control, color = Color.Black.copy(alpha = .68f), contentColor = Color.White, hairline = false) {
+            Text(
+                if (video) "Cambiar a audio" else "Cambiar a video",
+                Modifier.padding(horizontal = OndaraTheme.spacing.lg, vertical = OndaraTheme.spacing.sm),
+                style = OndaraTheme.type.bodyStrong,
+            )
+        }
+    }
 }
 
 @Composable
@@ -148,22 +164,13 @@ internal fun openAudioOutput(context: Context) {
     Toast.makeText(context, "No hay selector de salida de audio disponible", Toast.LENGTH_SHORT).show()
 }
 
-/** Zona fija de tres líneas; el degradado alcanza 55 % antes del texto. Medición O(1). */
+/** Reserva tres líneas transparentes aunque la canción esté entre versos. */
 @Composable
 internal fun CinematicLyricBox(currentLine: @Composable (Modifier) -> Unit) {
-    val spacing = OndaraTheme.spacing
     val height = with(androidx.compose.ui.platform.LocalDensity.current) { OndaraTheme.type.lyric.lineHeight.toDp() * 3 }
-    Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(spacing.lg).background(Brush.verticalGradient(
-            listOf(Color.Transparent, Color.Black.copy(alpha = CINEMATIC_LYRIC_SCRIM)),
-        )))
-        Box(Modifier.fillMaxWidth().height(height).background(Color.Black.copy(alpha = CINEMATIC_LYRIC_SCRIM))
-            .clipToBounds(), contentAlignment = Alignment.BottomStart) {
-            CompositionLocalProvider(LocalContentColor provides Color.White) {
-                currentLine(Modifier.fillMaxSize())
-            }
+    Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.BottomStart) {
+        CompositionLocalProvider(LocalContentColor provides Color.White) {
+            currentLine(Modifier.fillMaxSize())
         }
     }
 }
-
-internal const val CINEMATIC_LYRIC_SCRIM = .55f

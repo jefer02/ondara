@@ -42,6 +42,16 @@ class VideoResolverTest {
     }
 
     @Test
+    fun `video completo elige la mayor resolucion HD conservando el formato del canvas`() {
+        val hd = candidate(2160)
+        val video = VideoSelection.build("vid", "fixture", listOf(candidate(1080), hd), emptyList(), null, false, 215)
+        assertEquals(1080, video.videoOnly?.height)
+        assertEquals(hd.toStream(), video.fullVideo)
+        val sd = VideoSelection.build("vid", "fixture", listOf(candidate(480)), emptyList(), null, false, 215)
+        assertNull(sd.fullVideo)
+    }
+
+    @Test
     fun `a igual altura prefiere avc y despues vp9`() {
         val avc = candidate(1080)
         val vp9 = candidate(1080, "video/webm; codecs=vp9")

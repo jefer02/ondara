@@ -1,5 +1,19 @@
 package app.ondara.core.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.CancellationException
+import java.io.File
+import app.ondara.core.model.UserSettings
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.Image
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -51,7 +65,18 @@ import app.ondara.core.model.TopPick
 
 /** Lo que el encabezado necesita saber del perfil para pintar el avatar. */
 @Immutable
-data class ProfileBadge(val name: String = "", val avatarPath: String = "", val hasAccounts: Boolean = false)
+data class ProfileBadge(
+    val name: String = "",
+    val avatarPath: String = "",
+    val hasAccounts: Boolean = false,
+    val effect: Boolean = true,
+    val pixelBlocks: Int = 48,
+    val revision: Long = 0,
+) {
+    constructor(settings: UserSettings, hasAccounts: Boolean = false) : this(
+        settings.profileName, settings.avatarPath, hasAccounts, settings.avatarPixelEffect, settings.avatarPixelBlocks, settings.avatarRevision,
+    )
+}
 
 val LocalProfileBadge = staticCompositionLocalOf { ProfileBadge() }
 
@@ -61,13 +86,35 @@ fun initialsOf(name: String): String =
 
 /** Avatar circular: foto elegida por el usuario o iniciales sobre el acento del tema. */
 @Composable
-fun Avatar(name: String, avatarPath: String, modifier: Modifier = Modifier, size: Dp = 36.dp) {
+fun Avatar(profile: ProfileBadge, modifier: Modifier = Modifier, size: Dp = 36.dp) {
     val colors = OndaraTheme.colors
+    val context = LocalContext.current.applicationContext
+    val target = OndaraTheme.targetColors
+    val ink = target.onBlock.toArgb()
+    val paper = target.blockLight.toArgb()
+    val (dark, light) = if (ColorMath.luminance(ink) <= ColorMath.luminance(paper)) ink to paper else paper to ink
+    val image = if (profile.avatarPath.isBlank()) null else androidx.compose.runtime.key(profile.avatarPath, profile.revision, profile.effect, profile.pixelBlocks, dark, light) {
+        val bitmap by produceState<Bitmap?>(null) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    ProfileAvatarCache.load(File(context.filesDir, "profile"), profile, dark, light)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+        bitmap
+    }
     Box(modifier.size(size).clip(CircleShape).background(colors.blockMuted), contentAlignment = Alignment.Center) {
-        if (avatarPath.isNotEmpty()) {
-            Artwork("file://$avatarPath", Modifier.fillMaxSize(), shape = CircleShape, sizePx = 256)
+        if (image != null) {
+            val painter = remember(image, profile.effect) {
+                BitmapPainter(image.asImageBitmap(), filterQuality = if (profile.effect) FilterQuality.None else FilterQuality.Medium)
+            }
+            Image(painter, "Foto de perfil", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
-            val initials = initialsOf(name)
+            val initials = initialsOf(profile.name)
             if (initials.isEmpty()) {
                 Icon(OndaraIcons.Person, null, tint = colors.onBlockMuted, size = size * 0.5f)
             } else {
@@ -92,7 +139,7 @@ fun AvatarButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .size(OndaraTheme.spacing.touch),
         contentAlignment = Alignment.Center,
     ) {
-        Avatar(badge.name, badge.avatarPath)
+        Avatar(badge)
         if (!badge.hasAccounts) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(top = 5.dp, end = 5.dp).size(11.dp)
@@ -215,7 +262,7 @@ fun <T : Any> Carousel(
 
 /** Color de página de una pantalla inmersiva y su color de texto con contraste AA garantizado. */
 @Immutable
-data class ImmersiveColors(val page: Color, val content: Color)
+data class ImmersiveColors(val page: Color, val content: Color, val artworkTop: Color = page)
 
 /**
  * Deriva el color de fondo de una página inmersiva del color dominante de su imagen: se mezcla con
@@ -228,9 +275,9 @@ fun rememberImmersiveColors(imageUrl: String?): ImmersiveColors {
     val matte = OndaraTheme.materials.blur.value <= 0f
     val palette = rememberArtworkPalette(imageUrl)
     val dominant = palette?.dominant
-    return remember(dominant, colors.background, colors.onBackground, matte) {
+    return remember(dominant, palette?.top, colors.background, colors.onBackground, matte) {
         val page = if (dominant == null || matte) colors.background else lerp(dominant, colors.background, if (colors.isDark) 0.42f else 0.6f)
-        ImmersiveColors(page, Color(ColorMath.ensureContrast(colors.onBackground.toArgb(), page.toArgb())))
+        ImmersiveColors(page, Color(ColorMath.ensureContrast(colors.onBackground.toArgb(), page.toArgb())), palette?.top ?: page)
     }
 }
 
@@ -255,6 +302,7 @@ fun ImmersiveDetail(
     ImmersiveHeroScaffold(
         title = title,
         pageColor = immersive.page,
+        artworkTop = immersive.artworkTop,
         contentColor = immersive.content,
         onBack = onBack,
         hero = { m -> if (cover != null) cover(m) else Artwork(imageUrl, m, shape = RectangleShape, sizePx = 1080) },

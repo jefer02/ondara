@@ -33,7 +33,7 @@ enum class RepeatMode { OFF, ALL, ONE }
 data class PlaybackContext(val type: String, val title: String)
 
 @Serializable
-enum class CanvasSource { APPLE_MUSIC, SPOTIFY, TIDAL, YOUTUBE_CLIP }
+enum class CanvasSource { APPLE_MUSIC, SPOTIFY, TIDAL, YOUTUBE_CLIP, YOUTUBE_VIDEO }
 
 /** Canvas resuelto de una canción: un vídeo corto que se repite en bucle. */
 @Serializable
@@ -56,6 +56,9 @@ sealed interface CanvasState {
     /** Sin canvas o no permitido: la UI muestra la portada. */
     data class None(val songId: String?) : CanvasState
 }
+
+/** Oferta de vídeo verificada para la canción indicada. */
+data class VideoOffer(val songId: String, val enabled: Boolean = false)
 
 /** Ranura visible y superficies que ya pintaron su primer fotograma. */
 data class CanvasSurfaces(val active: Int = 0, val firstFrame: Set<Int> = emptySet(), val width: Int = 0, val height: Int = 0)

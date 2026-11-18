@@ -114,6 +114,8 @@ se aclaró a `#8E93AB` (5,7:1 sobre la superficie). El texto tinta sobre el bloq
   conectadas, Temas, Ajustes, Descargas, Acerca de, y el pie "Ondara · por Jeferson Manuel Morillo Vallejo").
   **v3**: al colapsar, el saludo se desvanece con la altura real del bloque y se recorta por la parte que entra
   bajo la barra; la barra usa tinte del 92 % del fondo (sin texto fantasma), también en temas mate.
+  **v4**: Ajustes, Temas, Perfil y Acerca de cubren el área de las pestañas. Volver restaura la pestaña
+  de origen. Tocar Inicio vuelve a su raíz y desplaza su lista al comienzo.
 - **Velos**: bajo la barra de estado, vidrio con desenfoque progresivo en cuanto hay scroll; abajo, `BottomFade`
   detrás de la barra y el mini-reproductor. Las listas reservan `LocalBottomInset` (barra + mini + márgenes).
 - **Inicio**: saludo → banner "Conecta tus cuentas" → Top Picks → Escuchado recientemente → Hecho para ti →
@@ -136,19 +138,30 @@ se aclaró a `#8E93AB` (5,7:1 sobre la superficie). El texto tinta sobre el bloq
 `HazeProgressive.verticalGradient` (0 → blur de 44 dp) fundida con el color dominante, que es el fondo de toda la
 página (`rememberImmersiveColors`: dominante mezclado con el fondo del tema, texto forzado a AA); nombre
 centrado, etiqueta de vidrio opcional, fila de `GlassIconButton` (ℹ, ▶ blanco, ☆) o píldoras Reproducir/Aleatorio;
-botones flotantes de vidrio arriba; contenido en `GlassCard`. En temas mate la página conserva el fondo del tema.
+botones flotantes arriba con vidrio blanco o negro al 60 %, según el dominante de la franja de portada que
+hay debajo. La fila de canción usa un menú transparente en el mismo tono secundario que sus metadatos.
+Durante el scroll, el contenido del héroe sube con parallax y se desvanece, recortado debajo de la barra
+superior. La barra compacta usa el color de la página al 90 %, conserva el mismo conjunto de botones y
+muestra el título pequeño centrado. En temas mate la página conserva el fondo del tema.
 
 ## Reproductor
 
 | Layout | Descripción |
 |---|---|
-| `CINEMATIC` ("Cine", por defecto en instalación nueva) | **canvas** corto en bucle a pantalla completa (Apple Music / Tidal, o clip de 7 s del vídeo oficial en 720p/1080p, con *crossfade* de 350 ms en el bucle); el espacio libre queda arriba y todo el bloque de controles se ancla abajo: línea actual de la letra en una caja fija de 3 líneas (scrim negro 55 % + sombra, auto-size y elipsis), fila de canción con ✕ y ⊕, progreso fino, controles con play en círculo blanco, fila de dispositivos/temporizador/compartir/cola y el **tirador "Letra"** (48 dp, color dominante apagado de la portada, deslizar o tocar para abrir la letra completa). Sin canvas: portada con Ken Burns |
+| `CINEMATIC` ("Cine", por defecto en instalación nueva) | Canvas corto en bucle a pantalla completa (Apple Music, Tidal o un clip de YouTube). El bloque inferior tiene tres líneas transparentes reservadas para la letra sincronizada, con sombra negra al 45 % y radio de 16 dp. Le siguen la fila de canción con ✕ y ⊕, progreso, transporte y acciones. La píldora "Cambiar a video" aparece si el resolver confirma un video en HD y la red lo permite. El video completo encaja en el viewport, admite horizontal y reutiliza el audio en curso. Sin canvas se muestra la portada. |
 | `BENTO` (Tinta) | bloques: portada, título/artista (claro), progreso (primario), controles (apagado) |
 | `ARTWORK_HERO`, `IMMERSIVE`, `MINIMAL`, `VINYL` | los de la v1 |
 
-Todos los layouts comparten los mismos componentes (`PlayerControls.kt`): título y artista en **una línea** con
-marquee lento (elipsis con movimiento reducido), transporte, acciones y tirador de letra; cada layout solo cambia
-la disposición. La posición de los controles no depende de la letra ni del título.
+Los seis layouts llenan exactamente el primer viewport con los controles. Un chevron discreto encima de
+las acciones indica que hay más contenido. Al desplazar se ve la tarjeta "Vista previa de la letra", con
+hasta cinco líneas sincronizadas en blanco al 100 % (activa) y al 55 % (resto) sobre el dominante de
+la portada oscurecido a AA. Debajo están "Créditos" y "Acerca del artista". Los títulos que desbordan
+se desplazan tras una pausa de 2 s, con una máscara de 20 dp en ambos bordes. Con movimiento reducido
+se truncan con elipsis.
+
+La letra completa ocupa toda la pantalla con la portada desenfocada y un velo tonal que llega bajo las
+barras de sistema. El encabezado queda dentro del inset de estado e incluye el chevron de cierre,
+la carátula, título y artista en una línea cada uno, favorito y menú.
 
 El usuario elige el layout en Ajustes › Reproductor (chips que aplican al instante y vista previa con el
 reproductor real); "Según el tema" usa el del `ThemeSpec`. Cambiar el layout en el editor de temas lo aplica
@@ -156,9 +169,12 @@ reproductor real); "Según el tema" usa el del `ThemeSpec`. Cambiar el layout en
 
 ## Perfil
 
-Composición *bento* con los tokens de bloque del tema: nombre + carita del estado de ánimo, canción del día,
-minutos del mes y género top, "Tu paleta" (hex en monoespaciada), artista top tramado y pie con "Escuchando
-desde". Se comparte como imagen (el bento se graba en un `GraphicsLayer`).
+El bento muestra la foto grande, el nombre, el ánimo, la canción del día, las estadísticas y
+"Escuchando desde". El avatar pequeño aparece en el encabezado de las pestañas y en Cuenta. Cuando
+falta una foto se usan iniciales, y cuando falta un nombre el bloque ofrece "Agregar nombre".
+La foto se elige con Photo Picker y se recorta a un cuadrado con zoom y arrastre. El efecto píxel
+opcional usa un mosaico de 32, 48 o 64 bloques con Bayer 4×4 a dos tonos del tema. El perfil se puede
+compartir como imagen.
 
 ## Curvas de animación
 
@@ -179,7 +195,7 @@ desde". Se comparte como imagen (el bento se graba en un `GraphicsLayer`).
 | Hoja de Cuenta | escala 0.72→1 desde la esquina del avatar + alfa, spring del tema |
 | Tramado → color | mezcla del shader 1→0 en `tween(300)` |
 | Perfil | bloques en entrada escalonada de 40 ms; inclinación 3D al mantener presionado |
-| Cine | crossfade del bucle del canvas 350 ms; canvas/portada 400 ms; controles con spring del tema; Ken Burns 24 s; ondas de doble toque; cambio de línea de letra con fade + desplazamiento dentro de la caja fija |
+| Cine | crossfade del bucle del canvas 350 ms; canvas/portada 400 ms; controles visibles en todo momento; Ken Burns 24 s; ondas de doble toque; cambio de línea de letra con fade + desplazamiento dentro del espacio fijo |
 | Vinilo | 200°/s; al pausar frena con `motion.gentle()` |
 | Hápticos | `tick` en play/pausa, saltos, chips e interruptores; `edge` al tope de un deslizamiento; `confirm` en pulsación larga y al coger un elemento de la cola |
 

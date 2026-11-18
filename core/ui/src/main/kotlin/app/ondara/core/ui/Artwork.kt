@@ -92,25 +92,29 @@ fun Artwork(
 @Composable
 fun rememberArtworkPalette(url: String?): ArtworkPalette? {
     val context = LocalContext.current.applicationContext
-    val palette by produceState<ArtworkPalette?>(null, url) {
-        if (url == null) {
-            value = null
-            return@produceState
+    if (url == null) return null
+    return androidx.compose.runtime.key(url) {
+        val palette by produceState<ArtworkPalette?>(null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    val request = ImageRequest.Builder(context).data(url.thumbnail(96)).size(96).allowHardware(false).build()
+                    val bitmap = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image?.toBitmap()
+                        ?: return@runCatching null
+                    val swatches = Palette.from(bitmap).clearFilters().maximumColorCount(12).generate()
+                    val dominant = swatches.getDominantColor(0xFF202020.toInt())
+                    val top = Palette.from(bitmap).clearFilters().maximumColorCount(8)
+                        .setRegion(0, 0, bitmap.width, (bitmap.height / 4).coerceAtLeast(1)).generate()
+                        .getDominantColor(dominant)
+                    ArtworkPalette(
+                        dominant = Color(dominant),
+                        top = Color(top),
+                        vibrant = Color(swatches.getVibrantColor(swatches.getLightVibrantColor(swatches.getMutedColor(dominant)))),
+                        muted = Color(swatches.getDarkMutedColor(swatches.getMutedColor(dominant))),
+                        light = Color(swatches.getLightMutedColor(swatches.getLightVibrantColor(dominant))),
+                    )
+                }.getOrNull()
+            }
         }
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                val request = ImageRequest.Builder(context).data(url.thumbnail(96)).allowHardware(false).build()
-                val bitmap = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image?.toBitmap() ?: return@runCatching null
-                val p = Palette.from(bitmap).maximumColorCount(12).generate()
-                val dominant = p.getDominantColor(0xFF202020.toInt())
-                ArtworkPalette(
-                    dominant = Color(dominant),
-                    vibrant = Color(p.getVibrantColor(p.getLightVibrantColor(p.getMutedColor(dominant)))),
-                    muted = Color(p.getDarkMutedColor(p.getMutedColor(dominant))),
-                    light = Color(p.getLightMutedColor(p.getLightVibrantColor(dominant))),
-                )
-            }.getOrNull()
-        } ?: value
+        palette
     }
-    return palette
 }

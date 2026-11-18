@@ -132,7 +132,7 @@ internal fun PlayerSettingsContent(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun LayoutPreview(state: PlayerSettingsUiState, position: Flow<Long>, modifier: Modifier = Modifier) {
-    val lyrics = remember { LyricsSlots(full = {}, currentLine = {}, preview = {}) }
+    val lyrics = remember { LyricsSlots(full = { _, _ -> }, currentLine = {}, preview = {}) }
     val previewState = PlayerUiState(player = state.player, settings = state.settings)
     Box(modifier.fillMaxWidth().clip(OndaraTheme.shapes.large).background(OndaraTheme.colors.background)
         .clearAndSetSemantics { contentDescription = "Vista previa del diseño seleccionado" }) {

@@ -53,6 +53,9 @@ data class UserSettings(
     val videoWifiOnly: Boolean = true,
     /** Tema Tinta: tramado de dos tonos también sobre el vídeo. */
     val ditherVideo: Boolean = true,
+    val avatarPixelEffect: Boolean = true,
+    val avatarPixelBlocks: Int = 48,
+    val avatarRevision: Long = 0,
 ) {
     companion object {
         const val PLAYER_LAYOUT_THEME = "THEME"

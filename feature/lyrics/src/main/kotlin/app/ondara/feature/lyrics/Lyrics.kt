@@ -1,5 +1,21 @@
 package app.ondara.feature.lyrics
 
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.rememberUpdatedState
+import app.ondara.core.designsystem.component.MarqueeText
+import app.ondara.core.designsystem.theme.ColorMath
+import app.ondara.core.ui.rememberArtworkPalette
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import app.ondara.core.designsystem.theme.LocalOndaraColors
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -38,7 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
@@ -65,7 +80,6 @@ import app.ondara.core.designsystem.component.EmptyState
 import app.ondara.core.designsystem.theme.LocalContentColor
 import app.ondara.core.designsystem.component.Label
 import app.ondara.core.designsystem.component.LocalBottomInset
-import app.ondara.core.designsystem.component.MeshGradientBackground
 import app.ondara.core.designsystem.component.OndaraIconButton
 import app.ondara.core.designsystem.component.OndaraSheet
 import app.ondara.core.designsystem.component.Skeleton
@@ -202,63 +216,117 @@ fun LyricsView(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(vertical = 120.dp),
     showHeader: Boolean = true,
+    onClose: (() -> Unit)? = null,
     viewModel: LyricsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LyricsContent(state, viewModel::onEvent, viewModel::positionMs, modifier, contentPadding, showHeader)
+    LyricsContent(state, viewModel::onEvent, viewModel::positionMs, modifier, contentPadding, showHeader, onClose)
 }
 
 @Composable
 internal fun LyricsContent(
     state: LyricsUiState, onEvent: (LyricsEvent) -> Unit, positionMs: () -> Long,
     modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(vertical = 120.dp), showHeader: Boolean = true,
+    onClose: (() -> Unit)? = null,
 ) {
     val lyrics = state.lyrics
     val padding = PaddingValues(
         start = contentPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
         end = contentPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
         top = contentPadding.calculateTopPadding(),
-        bottom = contentPadding.calculateBottomPadding() + LocalBottomInset.current,
+        bottom = contentPadding.calculateBottomPadding() + if (onClose == null) LocalBottomInset.current else 0.dp,
     )
-    Box(modifier.fillMaxSize().background(OndaraTheme.colors.background)) {
-        LyricsBackground(state.song)
-        Column(Modifier.fillMaxSize()) {
-            if (showHeader) LyricsHeader(state) { onEvent(it) }
-            when {
-                state.loading -> Column(Modifier.fillMaxSize().padding(OndaraTheme.spacing.xxl), verticalArrangement = Arrangement.Center) {
-                    repeat(5) { Skeleton(Modifier.padding(vertical = OndaraTheme.spacing.md).size((260 - it * 28).dp, 26.dp)) }
+    val colors = OndaraTheme.colors
+    val spacing = OndaraTheme.spacing
+    val dominant = rememberArtworkPalette(state.song?.thumbnailUrl)?.dominant ?: colors.background
+    val veil = Color(if (colors.isDark) ColorMath.darkenedForWhite(dominant.toArgb(), .55f) else {
+        ColorMath.ensureContrast(dominant.toArgb(), colors.onBackground.toArgb(), 6.0)
+    })
+    val ink = Color(ColorMath.ensureContrast(colors.onBackground.toArgb(), veil.toArgb(), 6.0))
+    val muted = Color(ColorMath.ensureContrast(colors.onMuted.toArgb(), veil.toArgb(), 6.0))
+    val dismissGesture = lyricsDismissGesture(onClose)
+    CompositionLocalProvider(LocalOndaraColors provides colors.copy(onBackground = ink, onMuted = muted), LocalContentColor provides ink) {
+        Box(modifier.fillMaxSize().clipToBounds().background(colors.background)) {
+            LyricsBackground(state.song?.thumbnailUrl, veil)
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                if (showHeader) LyricsHeader(state, onClose, onEvent)
+                when {
+                    state.loading -> Column(Modifier.fillMaxSize().padding(spacing.xxl), verticalArrangement = Arrangement.Center) {
+                        repeat(5) { Skeleton(Modifier.padding(vertical = spacing.md).size((260 - it * 28).dp, 26.dp)) }
+                    }
+                    lyrics == null || lyrics.lines.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        EmptyState(OndaraIcons.Lyrics, "Sin letra", message = "Ningún proveedor tiene la letra de esta canción.",
+                            action = "Buscar de nuevo", onAction = { onEvent(LyricsEvent.Retry) })
+                    }
+                    !lyrics.synced -> PlainLyrics(lyrics, dismissGesture, padding)
+                    else -> SyncedLyrics(lyrics, positionMs, { onEvent(LyricsEvent.Seek(it)) }, dismissGesture, padding)
                 }
-                lyrics == null || lyrics.lines.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    EmptyState(OndaraIcons.Lyrics, "Sin letra", message = "Ningún proveedor tiene la letra de esta canción.",
-                        action = "Buscar de nuevo", onAction = { onEvent(LyricsEvent.Retry) })
-                }
-                !lyrics.synced -> PlainLyrics(lyrics, Modifier, padding)
-                else -> SyncedLyrics(lyrics, positionMs, { onEvent(LyricsEvent.Seek(it)) }, Modifier, padding)
             }
         }
     }
 }
 
+/** Arrastre de cierre al llegar al primer verso. El scroll de la lista conserva prioridad. */
 @Composable
-private fun LyricsBackground(song: Song?) {
-    if (OndaraTheme.materials.blur == 0.dp) return
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        Artwork(song?.thumbnailUrl, Modifier.fillMaxSize().scale(1.25f).blur(80.dp), sizePx = 480, playing = true)
+private fun lyricsDismissGesture(onClose: (() -> Unit)?): Modifier {
+    if (onClose == null) return Modifier
+    val close by rememberUpdatedState(onClose)
+    val touch = OndaraTheme.spacing.touch
+    val threshold = with(LocalDensity.current) { touch.toPx() }
+    val connection = remember(threshold) {
+        object : NestedScrollConnection {
+            private var pull = 0f
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                pull = (pull + if (available.y > 0) available.y else consumed.y + available.y).coerceAtLeast(0f)
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                val dismiss = pull >= threshold
+                pull = 0f
+                if (dismiss) close()
+                return if (dismiss) available else Velocity.Zero
+            }
+        }
     }
-    MeshGradientBackground(OndaraTheme.artwork, Modifier.fillMaxSize().alpha(0.6f))
-    // El velo conserva el contraste del texto sobre las zonas claras de la portada.
-    Box(Modifier.fillMaxSize().background(OndaraTheme.colors.background.copy(alpha = 0.86f)))
+    return Modifier.nestedScroll(connection)
 }
 
 @Composable
-private fun LyricsHeader(state: LyricsUiState, onEvent: (LyricsEvent) -> Unit) {
+private fun LyricsBackground(url: String?, veil: Color) {
+    if (url != null) {
+        val artwork = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Modifier.scale(1.25f).blur(80.dp)
+        } else {
+            Modifier
+        }
+        val pixels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 240 else 12
+        Artwork(url, Modifier.fillMaxSize().then(artwork), shape = RectangleShape, sizePx = pixels, playing = true)
+    }
+    Box(Modifier.fillMaxSize().background(veil.copy(alpha = .94f)))
+}
+
+@Composable
+private fun LyricsHeader(state: LyricsUiState, onClose: (() -> Unit)?, onEvent: (LyricsEvent) -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(OndaraTheme.spacing.screen), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md)) {
-        Artwork(state.song?.thumbnailUrl, Modifier.size(OndaraTheme.spacing.touch), shape = OndaraTheme.shapes.artwork)
-        Column(Modifier.weight(1f)) {
-            Text(state.song?.title.orEmpty(), style = OndaraTheme.type.headline, maxLines = 1)
-            Text(state.song?.artistLine.orEmpty(), style = OndaraTheme.type.caption, color = OndaraTheme.colors.onMuted, maxLines = 1)
+    val close by rememberUpdatedState(onClose)
+    val spacing = OndaraTheme.spacing
+    val drag = if (onClose == null) Modifier else Modifier.pointerInput(Unit) {
+        var distance = 0f
+        detectVerticalDragGestures(
+            onDragStart = { distance = 0f },
+            onDragEnd = { if (distance > spacing.touch.toPx()) close?.invoke() },
+        ) { change, delta -> change.consume(); distance += delta }
+    }
+    Row(Modifier.fillMaxWidth().then(drag).padding(horizontal = spacing.sm, vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        if (onClose != null) OndaraIconButton(OndaraIcons.ChevronDown, "Cerrar letra", onClose)
+        Artwork(state.song?.thumbnailUrl, Modifier.size(spacing.touch), shape = OndaraTheme.shapes.artwork)
+        Column(Modifier.weight(1f).padding(start = spacing.sm)) {
+            MarqueeText(state.song?.title.orEmpty(), OndaraTheme.type.headline.copy(color = OndaraTheme.colors.onBackground))
+            MarqueeText(state.song?.artistLine.orEmpty(), OndaraTheme.type.caption.copy(color = OndaraTheme.colors.onMuted))
         }
         OndaraIconButton(if (state.favorite) OndaraIcons.StarFilled else OndaraIcons.Star,
             if (state.favorite) "Quitar de favoritas" else "Añadir a favoritas", { onEvent(LyricsEvent.ToggleFavorite) })
@@ -301,7 +369,7 @@ fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: 
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val height = with(density) { style.lineHeight.toDp() * 3 }
     val offset = with(density) { OndaraTheme.spacing.md.roundToPx() }
-    val shadowRadius = with(density) { OndaraTheme.spacing.xs.toPx() }
+    val shadowRadius = with(density) { OndaraTheme.spacing.lg.toPx() }
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.height(height).clipToBounds(), contentAlignment = Alignment.BottomStart) {
         val constraints = androidx.compose.ui.unit.Constraints(
             maxWidth = with(density) { maxWidth.roundToPx() }, maxHeight = with(density) { height.roundToPx() },
@@ -322,9 +390,9 @@ fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: 
                 }
                 style.copy(fontSize = style.fontSize * low, lineHeight = style.lineHeight * low)
             }
-            BasicText(current, style = fitted.copy(
+            if (current.isNotEmpty()) BasicText(current, style = fitted.copy(
                 color = if (color == Color.Unspecified) LocalContentColor.current else color,
-                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .55f), blurRadius = shadowRadius),
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .45f), blurRadius = shadowRadius),
             ), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
@@ -335,20 +403,17 @@ fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: 
 fun LyricsPreview(modifier: Modifier = Modifier, maxLines: Int = 5, viewModel: LyricsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val index = activeLine(state.lyrics, viewModel)
-    val lines = state.lyrics?.lines.orEmpty()
+    val lines = state.lyrics?.takeIf { it.synced }?.lines.orEmpty()
     val count = maxLines.coerceAtLeast(1)
     val start = (index - count / 2).coerceAtLeast(0).coerceAtMost((lines.size - count).coerceAtLeast(0))
     Column(modifier, verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.sm)) {
         when {
             state.loading -> Skeleton(Modifier.fillMaxWidth().size(OndaraTheme.spacing.touch))
-            lines.isEmpty() -> Text("Sin letra disponible", style = OndaraTheme.type.body, color = OndaraTheme.colors.onMuted)
+            lines.isEmpty() -> Text("Sin letra sincronizada", style = OndaraTheme.type.body, color = Color.White.copy(alpha = .55f))
             else -> lines.subList(start, (start + count).coerceAtMost(lines.size)).forEachIndexed { i, line ->
-                Column {
-                    Text(line.text, style = OndaraTheme.type.headline, color = if (start + i == index) {
-                        OndaraTheme.colors.onBackground
-                    } else { OndaraTheme.colors.onMuted })
-                    line.translation?.let { Text(it, style = OndaraTheme.type.body, color = OndaraTheme.colors.onMuted) }
-                }
+                Text(line.text, style = OndaraTheme.type.headline, color = if (start + i == index) {
+                    Color.White
+                } else { Color.White.copy(alpha = .55f) })
             }
         }
     }
