@@ -72,6 +72,26 @@ class VideoTest {
     }
 
     @Test
+    fun `una pista con audio integrado sirve como clip recortado de fondo`() = runBlocking {
+        val muxed = video().videoOnly!!.copy(url = "https://video-muxed", hasAudio = true)
+        val strategy = object : StreamStrategy, VideoStreamStrategy {
+            override val name = "prueba"
+            override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> = Result.failure(IllegalStateException())
+            override suspend fun resolveVideo(videoId: String) =
+                Result.success(video().copy(videoId = videoId, videoOnly = null, muxed = muxed, author = "Artista"))
+        }
+        val resolver = StreamResolver(listOf(strategy), ResolvedStreamCache())
+        val lyrics = object : app.ondara.core.domain.LyricsRepository {
+            override suspend fun lyrics(song: Song, forceRefresh: Boolean): app.ondara.core.model.Lyrics? = null
+        }
+        val canvas = YouTubeCanvasProvider(resolver, lyrics) { true }.resolve(song)!!.canvas
+        assertEquals(muxed.url, canvas.url)
+        assertEquals(app.ondara.core.model.CanvasSource.YOUTUBE_CLIP, canvas.source)
+        assertEquals(96_500L, canvas.clipStartMs)
+        assertEquals(103_500L, canvas.clipEndMs)
+    }
+
+    @Test
     fun `respaldo propio rechaza art track y autor distinto`() = runBlocking {
         var own = video().copy(author = "Artista", isArtTrack = true)
         val strategy = object : StreamStrategy, VideoStreamStrategy {

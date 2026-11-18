@@ -318,7 +318,8 @@ Otros pendientes: PoToken propio como estrategia adicional, descarga por rangos 
     El arrastre hacia abajo en el encabezado, o desde el inicio de la lista, cierra la vista. El fondo ocupa el
     área bajo ambas barras del sistema.
 54. **Reproducción en Cine**. El audio es el único modo de reproducción. El fondo conserva el canvas
-    silenciado en bucle, con portada de respaldo. El clip de YouTube sigue la política de Wi‑Fi.
+    silenciado en bucle, con portada de respaldo. El clip de YouTube sigue la política de Wi‑Fi. Si el
+    proveedor solo entrega un stream con audio integrado, se usa el mismo recorte con la pista de audio desactivada.
 55. **Foto de perfil**. El Photo Picker entrega una URI temporal al recortador. Solo la ruta del PNG, los ajustes
     de efecto y la revisión se persisten al final de `UserSettings`. El recorte se guarda de forma atómica con
     un máximo de 1024 px. La caché del efecto usa la foto, la revisión, los tonos y el tamaño como clave. Procesa

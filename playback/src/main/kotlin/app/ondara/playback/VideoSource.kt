@@ -28,7 +28,7 @@ class YouTubeCanvasProvider(
             val video = resolver.resolveVideo(id)?.takeIf { it.hasVideo && !it.isArtTrack && it.durationSec > 0 } ?: continue
             if (id == song.id && !canvasArtistMatches(song, video.author.orEmpty())) continue
             if (video.author?.let { canvasArtistMatches(song, it) } == false) continue
-            val stream = video.videoOnly ?: continue
+            val stream = video.videoOnly ?: video.muxed ?: continue
             val words = canvasAttempt { lyrics.lyrics(song) }
             val clip = canvasClip(video.durationSec * 1000L, words)
             return CanvasResult(
