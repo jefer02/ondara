@@ -23,7 +23,7 @@ data class AccountUiState(
     val progress: SyncProgress = SyncProgress(),
     val unmatched: Int = 0,
     val removal: String? = null,
-    val experimentalWarning: Boolean = false,
+    val spotifyWebLogin: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
 )
@@ -39,9 +39,8 @@ sealed interface AccountEvent {
     data class ClientId(val value: String) : AccountEvent
     data object Authorize : AccountEvent
     data object Developers : AccountEvent
-    data class Experimental(val enabled: Boolean) : AccountEvent
-    data object AcceptExperimental : AccountEvent
-    data object CancelExperimental : AccountEvent
+    data object OpenSpotifyLogin : AccountEvent
+    data object CloseSpotifyLogin : AccountEvent
     data class Cookie(val value: String) : AccountEvent
     data class Error(val message: String) : AccountEvent
 }
@@ -55,7 +54,6 @@ open class ConnectedAccountsViewModel(
     private val account: AccountRepository,
     private val settings: SettingsRepository,
     private val sync: SyncRepository,
-    autoSyncSpotify: Boolean = false,
 ) : MviViewModel<AccountUiState, AccountEvent, AccountEffect>(AccountUiState()) {
     private var connectingCookie = false
     private var clientIdSave: Job? = null
@@ -69,17 +67,9 @@ open class ConnectedAccountsViewModel(
                 setState {
                     latest.copy(
                         settings = latest.settings.copy(spotifyClientId = clientIdDraft ?: latest.settings.spotifyClientId),
-                        removal = removal, experimentalWarning = experimentalWarning, busy = busy, error = error,
+                        removal = removal, spotifyWebLogin = spotifyWebLogin, busy = busy, error = error,
                     )
                 }
-            }
-        }
-        if (autoSyncSpotify) viewModelScope.launch {
-            var previous = account.accounts.value.spotify?.id
-            account.accounts.collect { accounts ->
-                val current = accounts.spotify?.id
-                if (current != null && current != previous) sync.syncNow()
-                previous = current
             }
         }
     }
@@ -113,30 +103,24 @@ open class ConnectedAccountsViewModel(
                 settings.update { it.copy(spotifyClientId = clientId) }
                 emit(AccountEffect.OpenUrl(account.spotifyAuthorizationUrl()))
             }
-            is AccountEvent.Experimental -> setExperimental(event.enabled)
-            AccountEvent.AcceptExperimental -> {
-                setState { copy(experimentalWarning = false) }
-                perform { settings.update { it.copy(spotifyExperimental = true) } }
-            }
-            AccountEvent.CancelExperimental -> setState { copy(experimentalWarning = false) }
+            AccountEvent.OpenSpotifyLogin -> setState { copy(spotifyWebLogin = true, error = null) }
+            AccountEvent.CloseSpotifyLogin -> setState { copy(spotifyWebLogin = false) }
             is AccountEvent.Cookie -> connectCookie(event.value)
             is AccountEvent.Error -> setState { copy(error = event.message) }
         }
     }
 
-    private fun setExperimental(enabled: Boolean) {
-        if (enabled) {
-            setState { copy(experimentalWarning = true) }
-        } else {
-            perform { settings.update { it.copy(spotifyExperimental = false) } }
-        }
-    }
-
     private fun connectCookie(cookie: String) {
-        if (connectingCookie || state.value.accounts.spotify != null) return
+        if (!state.value.spotifyWebLogin || connectingCookie || state.value.accounts.spotify != null) return
         connectingCookie = true
         perform {
-            try { account.connectSpotifyWithCookie(cookie) } finally { connectingCookie = false }
+            try {
+                account.connectSpotifyWithCookie(cookie)
+                sync.syncNow()
+            } finally {
+                connectingCookie = false
+                setState { copy(spotifyWebLogin = false) }
+            }
         }
     }
 
@@ -162,4 +146,4 @@ class AccountViewModel @Inject constructor(account: AccountRepository, settings:
 
 @HiltViewModel
 class SpotifyConnectViewModel @Inject constructor(account: AccountRepository, settings: SettingsRepository, sync: SyncRepository) :
-    ConnectedAccountsViewModel(account, settings, sync, autoSyncSpotify = true)
+    ConnectedAccountsViewModel(account, settings, sync)

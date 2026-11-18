@@ -148,7 +148,7 @@ muestra el título pequeño centrado. En temas mate la página conserva el fondo
 
 | Layout | Descripción |
 |---|---|
-| `CINEMATIC` ("Cine", por defecto en instalación nueva) | Canvas corto en bucle a pantalla completa (Apple Music, Tidal o un clip de YouTube). El bloque inferior tiene tres líneas transparentes reservadas para la letra sincronizada, con sombra negra al 45 % y radio de 16 dp. Le siguen la fila de canción con ✕ y ⊕, progreso, transporte y acciones. La píldora "Cambiar a video" aparece si el resolver confirma un video en HD y la red lo permite. El video completo encaja en el viewport, admite horizontal y reutiliza el audio en curso. Sin canvas se muestra la portada. |
+| `CINEMATIC` ("Cine", por defecto en instalación nueva) | Canvas corto en bucle a pantalla completa (Apple Music, Tidal o un clip de YouTube). El bloque inferior tiene tres líneas transparentes reservadas para la letra sincronizada, con sombra negra al 45 % y radio de 16 dp. Le siguen la fila de canción con ✕ y ⊕, progreso, transporte y acciones. El audio se reproduce con el canvas silenciado como fondo. Sin canvas se muestra la portada. |
 | `BENTO` (Tinta) | bloques: portada, título/artista (claro), progreso (primario), controles (apagado) |
 | `ARTWORK_HERO`, `IMMERSIVE`, `MINIMAL`, `VINYL` | los de la v1 |
 

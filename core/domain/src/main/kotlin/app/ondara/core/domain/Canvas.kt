@@ -3,7 +3,6 @@ package app.ondara.core.domain
 import app.ondara.core.model.CanvasState
 import app.ondara.core.model.CanvasSurfaces
 import app.ondara.core.model.Song
-import app.ondara.core.model.VideoOffer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -20,9 +19,6 @@ interface CanvasRepository {
 interface CanvasController {
     val state: StateFlow<CanvasState>
     val surfaces: StateFlow<CanvasSurfaces>
-    val videoOffer: StateFlow<VideoOffer?>
-
-    fun toggleFullVideo()
 
     /** Cine está en pantalla. Idempotente. */
     fun start()

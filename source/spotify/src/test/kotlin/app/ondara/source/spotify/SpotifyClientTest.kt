@@ -95,7 +95,7 @@ class SpotifyClientTest {
     fun `next pointing outside the api is not followed`() = runTest {
         val auth = FakeAuth(SpotifyAuthMode.OFFICIAL, "tok")
         val client = SpotifyClient(mockHttp(requests) { json("""{"items":[{"track":${trackJson("t1")}}],"next":"https://evil.example/v1/me/tracks"}""") }) { auth }
-        assertEquals(listOf("t1"), client.savedTracks().map { it.id })
+        assertThrows<SpotifyApiException> { client.savedTracks() }
         assertEquals("$api/me/tracks?limit=50&offset=0", requests.single().url.toString())
     }
 
@@ -240,7 +240,7 @@ class SpotifyClientTest {
                 } else {
                     listOf(playlist("p2"))
                 }
-                json("""{"data":{"me":{"libraryV3":{"totalCount":51,"items":[${items.joinToString(",")}]}}}}""")
+                json("""{"data":{"me":{"libraryV3":{"totalCount":4,"items":[${items.joinToString(",")}]}}}}""")
             },
         ) { auth }
 
@@ -251,7 +251,7 @@ class SpotifyClientTest {
         assertEquals(2, requests.size)
         val body = requests.first().text()
         assertTrue(body.contains("\"operationName\":\"libraryV3\"") && body.contains("\"filters\":[\"Playlists\"]") && body.contains("\"flatten\":true"))
-        assertTrue(requests[1].text().contains("\"offset\":50"))
+        assertTrue(requests[1].text().contains("\"offset\":3"))
     }
 
     @Test
@@ -282,6 +282,35 @@ class SpotifyClientTest {
         assertEquals(2, requests.size)
         val body = requests[1].text()
         assertTrue(body.contains("\"operationName\":\"fetchPlaylist\"") && body.contains("\"uri\":\"spotify:playlist:pl1\""))
+    }
+
+    @Test
+    fun `experimental playlists import more than one hundred tracks in order`() = runTest {
+        val auth = FakeAuth(SpotifyAuthMode.EXPERIMENTAL, "web-token")
+        val offsets = ArrayList<Int>()
+        val client = SpotifyClient(
+            mockHttp(requests) { request ->
+                val offset = Regex(""""offset":(\d+)""").find(request.text())!!.groupValues[1].toInt()
+                offsets += offset
+                val items = (offset until minOf(offset + 35, 107)).joinToString(",") {
+                    """{"itemV2":${gqlTrack("spotify:track:t$it")}}"""
+                }
+                json("""{"data":{"playlistV2":{"content":{"totalCount":107,"items":[$items]}}}}""")
+            },
+        ) { auth }
+
+        assertEquals((0 until 107).map { "t$it" }, client.playlistTracks("pl").map { it.id })
+        assertEquals(listOf(0, 35, 70, 105), offsets)
+    }
+
+    @Test
+    fun `experimental incomplete pages are errors instead of empty libraries`() = runTest {
+        val auth = FakeAuth(SpotifyAuthMode.EXPERIMENTAL, "web-token")
+        val client = SpotifyClient(
+            mockHttp(requests) { json("""{"data":{"playlistV2":{"content":{"totalCount":10,"items":[]}}}}""") },
+        ) { auth }
+
+        assertThrows<SpotifyApiException> { client.playlistTracks("pl") }
     }
 
     @Test

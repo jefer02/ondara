@@ -58,7 +58,7 @@ class CanvasMediaCache @Inject constructor(@ApplicationContext context: Context,
 class CanvasRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     http: HttpClient,
-    private val resolver: StreamResolver,
+    resolver: StreamResolver,
     lyrics: LyricsRepository,
     private val settings: SettingsCache,
     private val mediaCache: CanvasMediaCache,
@@ -72,13 +72,7 @@ class CanvasRepositoryImpl @Inject constructor(
     private fun youtubeAllowed() = environment.allowed(settings.value.videoBackground, settings.value.videoWifiOnly)
 
     fun permitted(canvas: Canvas): Boolean = settings.value.videoBackground &&
-        (canvas.source !in setOf(CanvasSource.YOUTUBE_CLIP, CanvasSource.YOUTUBE_VIDEO) || youtubeAllowed())
-
-    internal suspend fun fullVideo(song: Song): FullVideo? = withContext(Dispatchers.IO) {
-        if (youtubeAllowed()) resolveFullVideo(resolver, song)?.takeIf { youtubeAllowed() } else null
-    }
-
-    internal fun invalidateFullVideo(videoId: String) = resolver.invalidateVideo(videoId)
+        (canvas.source != CanvasSource.YOUTUBE_CLIP || youtubeAllowed())
 
     private suspend fun resolve(song: Song): Canvas? {
         if (!settings.value.videoBackground) return null

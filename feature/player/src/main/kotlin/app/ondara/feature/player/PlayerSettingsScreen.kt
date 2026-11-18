@@ -111,17 +111,17 @@ internal fun PlayerSettingsContent(
             }
         }
         item(key = "video", contentType = "switch") {
-            SettingRow("Vídeo de fondo en Cine", trailing = {
+            SettingRow("Clip de fondo en Cine", trailing = {
                 OndaraSwitch(state.settings.videoBackground, { onEvent(PlayerSettingsEvent.Video(it)) })
             })
         }
         item(key = "wifi", contentType = "switch") {
-            SettingRow("Vídeo solo con Wi-Fi", trailing = {
+            SettingRow("Clip de YouTube solo con Wi-Fi", trailing = {
                 OndaraSwitch(state.settings.videoWifiOnly, { onEvent(PlayerSettingsEvent.Wifi(it)) })
             })
         }
         if (dither) item(key = "dither", contentType = "switch") {
-            SettingRow("Tramado de dos tonos en el vídeo", trailing = {
+            SettingRow("Tramado de dos tonos en el clip", trailing = {
                 OndaraSwitch(state.settings.ditherVideo, { onEvent(PlayerSettingsEvent.Dither(it)) })
             })
         }

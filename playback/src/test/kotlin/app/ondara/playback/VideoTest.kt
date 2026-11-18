@@ -26,14 +26,6 @@ class VideoTest {
     )
 
     @Test
-    fun `la sincronizacion corrige solo desfases mayores de 150 ms`() {
-        assertNull(videoSyncTarget(1_000, 850, 2_000))
-        assertEquals(1_000L, videoSyncTarget(1_000, 849, 2_000))
-        assertEquals(1_000L, videoSyncTarget(1_000, 1_151, 2_000))
-        assertEquals(2_000L, videoSyncTarget(3_000, 1_000, 2_000))
-    }
-
-    @Test
     fun `red restringe redes medidas y permite ethernet`() {
         assertTrue(VideoNetworkPolicy.allowed(true, true, true, true, true))
         assertTrue(VideoNetworkPolicy.allowed(true, false, true, false, false))
@@ -77,6 +69,26 @@ class VideoTest {
         assertEquals(96_500L, result.clipStartMs)
         assertEquals(103_500L, result.clipEndMs)
         assertNull(YouTubeCanvasProvider(resolver, lyrics) { false }.resolve(song))
+    }
+
+    @Test
+    fun `una pista con audio integrado sirve como clip recortado de fondo`() = runBlocking {
+        val muxed = video().videoOnly!!.copy(url = "https://video-muxed", hasAudio = true)
+        val strategy = object : StreamStrategy, VideoStreamStrategy {
+            override val name = "prueba"
+            override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> = Result.failure(IllegalStateException())
+            override suspend fun resolveVideo(videoId: String) =
+                Result.success(video().copy(videoId = videoId, videoOnly = null, muxed = muxed, author = "Artista"))
+        }
+        val resolver = StreamResolver(listOf(strategy), ResolvedStreamCache())
+        val lyrics = object : app.ondara.core.domain.LyricsRepository {
+            override suspend fun lyrics(song: Song, forceRefresh: Boolean): app.ondara.core.model.Lyrics? = null
+        }
+        val canvas = YouTubeCanvasProvider(resolver, lyrics) { true }.resolve(song)!!.canvas
+        assertEquals(muxed.url, canvas.url)
+        assertEquals(app.ondara.core.model.CanvasSource.YOUTUBE_CLIP, canvas.source)
+        assertEquals(96_500L, canvas.clipStartMs)
+        assertEquals(103_500L, canvas.clipEndMs)
     }
 
     @Test

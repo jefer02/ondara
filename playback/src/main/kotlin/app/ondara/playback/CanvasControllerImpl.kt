@@ -18,8 +18,6 @@ import app.ondara.core.model.Canvas
 import app.ondara.core.model.CanvasSource
 import app.ondara.core.model.CanvasState
 import app.ondara.core.model.CanvasSurfaces
-import app.ondara.core.model.Song
-import app.ondara.core.model.VideoOffer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,11 +41,6 @@ class CanvasControllerImpl @Inject constructor(
     override val state = mutableState.asStateFlow()
     private val mutableSurfaces = MutableStateFlow(CanvasSurfaces())
     override val surfaces = mutableSurfaces.asStateFlow()
-    private val mutableVideoOffer = MutableStateFlow<VideoOffer?>(null)
-    override val videoOffer = mutableVideoOffer.asStateFlow()
-    private var videoLookup: Job? = null
-    private var fullVideo: FullVideo? = null
-    private var selectedVideoSong: String? = null
     private val targets = arrayOfNulls<Surface>(2)
     private val players = arrayOfNulls<ExoPlayer>(2)
     private val canvases = arrayOfNulls<Canvas>(2)
@@ -89,9 +82,6 @@ class CanvasControllerImpl @Inject constructor(
         environment.stop()
         repeat(2) { players[it]?.release(); players[it] = null; canvases[it] = null }
         load = null
-        videoLookup = null
-        fullVideo = null
-        mutableVideoOffer.value = null
         prefetch = null
         transition = null
         prefetched = null
@@ -101,59 +91,6 @@ class CanvasControllerImpl @Inject constructor(
         mutableState.value = CanvasState.Idle
         mutableSurfaces.value = CanvasSurfaces()
     } }
-
-    override fun toggleFullVideo() { main.launch {
-        val scope = session ?: return@launch
-        val song = audio.state.value.current ?: return@launch
-        val offer = videoOffer.value?.takeIf { it.songId == song.id } ?: return@launch
-        if (offer.enabled) {
-            selectedVideoSong = null
-            mutableVideoOffer.value = offer.copy(enabled = false)
-            loadCanvas(scope, song)
-        } else {
-            val candidate = fullVideo?.takeIf { repository.permitted(it.canvas) } ?: return@launch
-            selectedVideoSong = song.id
-            if (candidate.expiresAtMs <= System.currentTimeMillis()) {
-                findFullVideo(scope, song)
-            } else {
-                playFullVideo(candidate)
-            }
-        }
-    } }
-
-    private fun findFullVideo(scope: CoroutineScope, song: Song) {
-        videoLookup?.cancel()
-        videoLookup = scope.launch {
-            val candidate = repository.fullVideo(song)
-            fullVideo = candidate
-            mutableVideoOffer.value = candidate?.let { VideoOffer(song.id) }
-            if (candidate != null && selectedVideoSong == song.id) playFullVideo(candidate)
-        }
-    }
-
-    private fun playFullVideo(video: FullVideo) {
-        mutableVideoOffer.value = VideoOffer(video.canvas.songId, enabled = true)
-        load?.cancel()
-        load = null
-        prefetch?.cancel()
-        prefetched = null
-        unavailable()
-        prepare(0, video.canvas)
-    }
-
-    private fun loadCanvas(scope: CoroutineScope, song: Song) {
-        load?.cancel()
-        unavailable()
-        load = scope.launch {
-            repository.observeCanvas(song).collect { result ->
-                when (result) {
-                    is CanvasState.Ready -> prepare(1 - surfaces.value.active, result.canvas)
-                    is CanvasState.None -> unavailable()
-                    else -> if (state.value !is CanvasState.Ready) mutableState.value = result
-                }
-            }
-        }
-    }
 
     override fun setSurface(slot: Int, surface: Any?) { main.launch {
         require(slot in 0..1)
@@ -177,16 +114,8 @@ class CanvasControllerImpl @Inject constructor(
         override fun onPlayerError(error: PlaybackException) {
             if (pending != slot && surfaces.value.active != slot) return
             // Una URL caducada no debe quedarse en caché: la próxima vez se resuelve de nuevo.
-            if (canvases[slot]?.source == CanvasSource.YOUTUBE_VIDEO) {
-                fullVideo?.let { repository.invalidateFullVideo(it.videoId) }
-                val song = audio.state.value.current
-                selectedVideoSong = null
-                mutableVideoOffer.value = null
-                if (song != null) session?.let { loadCanvas(it, song) }
-            } else {
-                canvases[slot]?.songId?.let { id -> main.launch { repository.invalidate(id) } }
-                unavailable()
-            }
+            canvases[slot]?.songId?.let { id -> main.launch { repository.invalidate(id) } }
+            unavailable()
         }
     }
 
@@ -206,13 +135,16 @@ class CanvasControllerImpl @Inject constructor(
             pending = null
             prefetch?.cancel()
             prefetched = null
-            videoLookup?.cancel()
-            fullVideo = null
-            mutableVideoOffer.value = null
-            if (selectedVideoSong != song?.id || !newPolicy.second) selectedVideoSong = null
-            if (song == null || !newPolicy.first) { unavailable(); return }
-            loadCanvas(scope, song)
-            if (newPolicy.second) findFullVideo(scope, song)
+            if (song == null || !settings.value.videoBackground) { unavailable(); return }
+            load = scope.launch {
+                repository.observeCanvas(song).collect { result ->
+                    when (result) {
+                        is CanvasState.Ready -> prepare(1 - surfaces.value.active, result.canvas)
+                        is CanvasState.None -> unavailable()
+                        else -> if (state.value !is CanvasState.Ready) mutableState.value = result
+                    }
+                }
+            }
         }
         if (!environment.visible) {
             players.forEach { it?.pause() }
@@ -221,12 +153,10 @@ class CanvasControllerImpl @Inject constructor(
             return
         }
         players.forEachIndexed { slot, player ->
-            val canvas = canvases[slot]
-            val active = canvas != null && (slot == surfaces.value.active || slot == pending || transition != null)
-            player?.playWhenReady = active && (canvas?.source != CanvasSource.YOUTUBE_VIDEO || audio.state.value.isPlaying)
+            player?.playWhenReady = canvases[slot] != null && (slot == surfaces.value.active || slot == pending || transition != null)
         }
         val next = audio.state.value.let { it.queue.getOrNull(it.currentIndex + 1) }
-        if (videoOffer.value?.enabled != true && settings.value.videoBackground && next != null && prefetched != next.id) {
+        if (settings.value.videoBackground && next != null && prefetched != next.id) {
             prefetch?.cancel()
             prefetched = next.id
             prefetch = scope.launch { repository.prefetch(next) }
@@ -240,11 +170,9 @@ class CanvasControllerImpl @Inject constructor(
         dimensions[slot] = canvas.width to canvas.height
         mutableSurfaces.update { it.copy(firstFrame = it.firstFrame - slot) }
         players[slot]?.apply {
-            val full = canvas.source == CanvasSource.YOUTUBE_VIDEO
-            repeatMode = if (full) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
-            setMediaItem(canvas.mediaItem(), if (full) audio.positionMs() else 0L)
+            setMediaItem(canvas.mediaItem())
             prepare()
-            playWhenReady = environment.visible && (!full || audio.state.value.isPlaying)
+            playWhenReady = environment.visible
         }
     }
 
@@ -272,13 +200,7 @@ class CanvasControllerImpl @Inject constructor(
     /** Cruza al inicio preparado 350 ms antes del final; O(1) por tick, sin deriva respecto al audio. */
     @Suppress("ReturnCount") // cada guarda corta el tick sin trabajo
     private fun loop() {
-        if (!environment.visible) return
-        if (videoOffer.value?.enabled == true) {
-            val video = players[pending ?: surfaces.value.active] ?: return
-            videoSyncTarget(audio.positionMs(), video.currentPosition, video.duration)?.let(video::seekTo)
-            return
-        }
-        if (pending != null || transition != null || load?.isActive == true) return
+        if (!environment.visible || pending != null || transition != null || load?.isActive == true) return
         if (state.value !is CanvasState.Ready) return
         val slot = surfaces.value.active
         val canvas = canvases[slot] ?: return
@@ -301,10 +223,4 @@ class CanvasControllerImpl @Inject constructor(
     }
 
     private companion object { const val CROSSFADE_MS = 350L }
-}
-
-/** Corrige solo diferencias mayores de 150 ms y respeta el fin del vídeo. O(1). */
-internal fun videoSyncTarget(audioMs: Long, videoMs: Long, durationMs: Long): Long? {
-    val target = audioMs.coerceIn(0, if (durationMs > 0) durationMs else Long.MAX_VALUE)
-    return target.takeIf { kotlin.math.abs(it - videoMs) > 150 }
 }

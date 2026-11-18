@@ -1,9 +1,6 @@
 package app.ondara.feature.account
 
 import android.net.Uri
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -11,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
@@ -20,7 +18,6 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.Icon
@@ -72,8 +69,8 @@ fun AccountSheetContent(
         Row { Icon(OndaraIcons.Spotify, null); Text("Spotify") }
         Text(state.accounts.spotify?.let { "Conectado como ${it.name}" } ?: "Sin conectar")
         OndaraButton(
-            if (state.accounts.spotify == null) "Conectar" else "Desconectar",
-            { event(if (state.accounts.spotify == null) AccountEvent.Navigate(Nav.SpotifyConnect) else AccountEvent.Disconnect) },
+            "Importar desde Spotify",
+            { event(AccountEvent.Navigate(Nav.SpotifyConnect)) },
             style = ButtonStyle.TONAL, enabled = !state.busy,
         )
         ImportProgress(state.progress)
@@ -105,7 +102,7 @@ internal fun ImportProgress(progress: SyncProgress) {
     val fraction = animateFloatAsState(progress.fraction.coerceIn(0f, 1f), motion.spring(), label = "Importación")
     val colors = OndaraTheme.colors
     if (progress.running) {
-        Text("Importando ${progress.done} de ${progress.total} canciones…", style = OndaraTheme.type.caption)
+        Text(progress.message.ifBlank { "Importando…" }, style = OndaraTheme.type.caption)
         Canvas(
             Modifier.fillMaxWidth().height(OndaraTheme.spacing.sm).semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(progress.fraction.coerceIn(0f, 1f), 0f..1f)
@@ -135,79 +132,46 @@ fun SpotifyConnectScreen(
             }.onFailure { event(AccountEvent.Error("No se pudo abrir el navegador: ${it.message}")) }
         }
     }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    if (state.spotifyWebLogin && state.accounts.spotify == null) {
+        SpotifyWebLogin(state.busy, event, modifier, onAlternative = {
+            event(AccountEvent.CloseSpotifyLogin)
+            showAdvanced = true
+        })
+        return
+    }
+
     ScreenScaffold("Spotify", modifier, onBack = { event(AccountEvent.Navigate(Nav.Back)) }) {
         item(key = "spotify", contentType = "conexión") {
-            Column(verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.lg)) {
-                Text(
-                    "Spotify no permite reproducir su audio en apps de terceros. Ondara importa tus playlists y canciones " +
-                        "y las reproduce desde YouTube Music buscando cada canción equivalente.",
-                )
-                if (state.accounts.spotify != null) {
-                    Text("Conectado como ${state.accounts.spotify?.name}", style = OndaraTheme.type.title)
+            Column(Modifier.padding(horizontal = OndaraTheme.spacing.screen), verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.lg)) {
+                Text("Importa tus playlists, canciones y álbumes guardados. Ondara busca sus equivalentes en YouTube Music.")
+                val spotify = state.accounts.spotify
+                if (spotify != null) {
+                    Text("Conectado como ${spotify.name}", style = OndaraTheme.type.title)
                     ImportProgress(state.progress)
-                    OndaraButton("Sincronizar ahora", { event(AccountEvent.Sync) }, enabled = !state.progress.running)
+                    OndaraButton("Importar biblioteca", { event(AccountEvent.Sync) }, enabled = !state.progress.running && !state.busy)
                     OndaraButton("Sin coincidencia (${state.unmatched})", { event(AccountEvent.Navigate(Nav.Unmatched)) })
                     OndaraButton("Desconectar", { event(AccountEvent.Disconnect) }, enabled = !state.busy)
-                    OndaraButton("Volver", { event(AccountEvent.Navigate(Nav.Back)) }, style = ButtonStyle.GHOST)
                 } else {
-                    Text("Oficial (recomendado)", style = OndaraTheme.type.title)
-                    Text(
-                        "1. Abre developer.spotify.com/dashboard.\n2. Selecciona Create app.\n" +
-                            "3. Añade Redirect URI: ondara://spotify-callback\n4. Marca Web API y guarda.\n5. Copia el Client ID y pégalo aquí.",
+                    Text("La conexión web usa tu sesión del reproductor de Spotify y puede dejar de funcionar si Spotify cambia su servicio.",
+                        style = OndaraTheme.type.caption)
+                    OndaraButton("Iniciar sesión en Spotify", { event(AccountEvent.OpenSpotifyLogin) }, enabled = !state.busy)
+                    OndaraButton(
+                        if (showAdvanced) "Ocultar conexión con Client ID" else "Conexión con Client ID",
+                        { showAdvanced = !showAdvanced }, style = ButtonStyle.GHOST,
                     )
-                    OndaraButton("Abrir Spotify for Developers", { event(AccountEvent.Developers) }, style = ButtonStyle.GHOST)
-                    OndaraTextField(state.settings.spotifyClientId, { event(AccountEvent.ClientId(it)) }, placeholder = "Client ID")
-                    OndaraButton("Conectar con Spotify", { event(AccountEvent.Authorize) }, enabled = !state.busy)
-                    Text(
-                        "En modo desarrollo, el dueño de la app necesita Premium. Se permiten hasta 5 usuarios autorizados; " +
-                            "añádelos en User Management.", style = OndaraTheme.type.caption,
-                    )
-                    Text("Experimental", style = OndaraTheme.type.headline)
-                    OndaraSwitch(state.settings.spotifyExperimental, { event(AccountEvent.Experimental(it)) }, Modifier.semantics { contentDescription = "Spotify experimental" })
-                    if (state.settings.spotifyExperimental) SpotifyWebLogin(event)
+                    if (showAdvanced) SpotifyClientIdSettings(state, event)
                 }
                 ErrorMessage(state.error)
             }
         }
     }
-    if (state.experimentalWarning) OndaraDialog(
-        "Spotify experimental", { event(AccountEvent.CancelExperimental) }, "Aceptar", { event(AccountEvent.AcceptExperimental) },
-        text = "Usa la cookie de sesión del reproductor web de Spotify. Es frágil —Spotify cambia sus claves— " +
-            "y va contra sus Términos de servicio. Úsalo bajo tu responsabilidad.",
-    )
 }
 
 @Composable
-private fun SpotifyWebLogin(event: (AccountEvent) -> Unit) {
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    val latestEvent by rememberUpdatedState(event)
-    LaunchedEffect(webView) {
-        while (webView != null) {
-            val cookie = CookieManager.getInstance().getCookie("https://open.spotify.com").orEmpty()
-                .split(';').map { it.trim() }.firstOrNull { it.startsWith("sp_dc=") }?.substringAfter('=')
-            if (!cookie.isNullOrBlank()) {
-                latestEvent(AccountEvent.Cookie(cookie))
-                break
-            }
-            kotlinx.coroutines.delay(1000)
-        }
-    }
-    DisposableEffect(Unit) { onDispose { webView?.stopLoading(); webView?.destroy(); webView = null } }
-    AndroidView(
-        modifier = Modifier.fillMaxWidth().height(480.dp),
-        factory = { context ->
-            WebView(context).apply {
-                webView = this
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                CookieManager.getInstance().setAcceptCookie(true)
-                webViewClient = object : WebViewClient() {
-                    override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
-                        if (request?.isForMainFrame == true) event(AccountEvent.Error("No se pudo cargar Spotify: ${error?.description}"))
-                    }
-                }
-                loadUrl("https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
-            }
-        },
-    )
+private fun SpotifyClientIdSettings(state: AccountUiState, event: (AccountEvent) -> Unit) {
+    Text("En Spotify for Developers, crea una app con Web API y añade ondara://spotify-callback como Redirect URI.")
+    OndaraButton("Abrir Spotify for Developers", { event(AccountEvent.Developers) }, style = ButtonStyle.GHOST)
+    OndaraTextField(state.settings.spotifyClientId, { event(AccountEvent.ClientId(it)) }, placeholder = "Client ID")
+    OndaraButton("Conectar con Client ID", { event(AccountEvent.Authorize) }, enabled = !state.busy)
 }

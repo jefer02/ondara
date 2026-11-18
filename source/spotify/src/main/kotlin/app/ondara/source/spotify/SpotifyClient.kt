@@ -1,6 +1,5 @@
 package app.ondara.source.spotify
 
-import app.ondara.core.network.array
 import app.ondara.core.network.get
 import app.ondara.core.network.string
 import io.ktor.client.HttpClient
@@ -13,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 
@@ -75,10 +75,15 @@ class SpotifyClient(private val http: HttpClient, private val auth: () -> Spotif
         var pages = 0
         while (url != null && pages++ < MaxPages) {
             val page = getJson(url)
-            page["items"].array.mapNotNullTo(out, parse)
-            // El token solo se envía a la propia API: se ignora un `next` que apunte a otro sitio.
-            url = page["next"].string?.takeIf { it.startsWith("$Api/") }
+            val items = page["items"] as? JsonArray ?: throw SpotifyApiException(200, "Spotify devolvió una página de biblioteca inválida.")
+            items.mapNotNullTo(out, parse)
+            // Una continuación externa indica una respuesta incompleta y nunca recibe el token.
+            url = page["next"].string
+            if (url != null && !url.startsWith("$Api/")) {
+                throw SpotifyApiException(200, "Spotify devolvió una continuación de biblioteca inválida.")
+            }
         }
+        if (url != null) throw SpotifyApiException(200, "Spotify devolvió demasiadas páginas para completar la importación.")
         return out
     }
 

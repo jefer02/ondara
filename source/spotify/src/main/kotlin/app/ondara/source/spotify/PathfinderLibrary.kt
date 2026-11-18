@@ -22,7 +22,6 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -72,16 +71,18 @@ internal class PathfinderLibrary(
         PathfinderParsers.albums(query(Operation.Library) { libraryVariables("Albums", offset) })
     }
 
-    /** Recorre una colección por `offset` hasta cubrir `totalCount`. O(n) elementos en ⌈n/50⌉ peticiones. */
+    /** Avanza por las entradas crudas recibidas, incluso si la página es corta o contiene huecos. O(n). */
     private suspend fun <T> paged(fetch: suspend (offset: Int) -> PathfinderPage<T>): List<T> {
         val out = ArrayList<T>()
         var offset = 0
         do {
             val page = fetch(offset)
             out += page.items
-            offset += PageSize
-        } while (page.received > 0 && offset < page.total && offset < MaxItems)
-        return out
+            offset += page.received
+            if (offset >= page.total) return out
+            if (page.received == 0) break
+        } while (offset < MaxItems)
+        throw SpotifyApiException(200, "Spotify devolvió una biblioteca incompleta. Inténtalo de nuevo.")
     }
 
     /**
@@ -118,7 +119,7 @@ internal class PathfinderLibrary(
             if (lastStatus in StaleHashStatuses) continue
             val json = response.takeIf { it.status.isSuccess() }?.jsonOrNull() ?: break
             val errors = json["errors"].array
-            if (errors.isEmpty() || json["data"] is JsonObject) return json
+            if (errors.isEmpty()) return json
             if (errors.none { it["message"].string.orEmpty().contains("PersistedQueryNotFound", ignoreCase = true) }) break
         }
         throw SpotifyApiException(lastStatus, "$MsgApiChanged (HTTP $lastStatus)")

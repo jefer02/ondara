@@ -9,7 +9,6 @@ import app.ondara.core.model.CanvasState
 import app.ondara.core.model.CanvasSurfaces
 import app.ondara.core.domain.PlayerController
 import app.ondara.core.model.PlayerState
-import app.ondara.core.model.VideoOffer
 import app.ondara.core.ui.MviViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +24,6 @@ data class PlayerUiState(
     val favorite: Boolean = false,
     val canvas: CanvasState = CanvasState.Idle,
     val canvasSurfaces: CanvasSurfaces = CanvasSurfaces(),
-    val videoOffer: VideoOffer? = null,
     val settings: UserSettings = UserSettings(),
 )
 
@@ -34,7 +32,6 @@ sealed interface PlayerEvent {
     data object NotInterested : PlayerEvent
     data class CanvasActive(val active: Boolean) : PlayerEvent
     data class CanvasSurface(val slot: Int, val surface: Any?) : PlayerEvent
-    data object ToggleVideo : PlayerEvent
     data object TogglePlay : PlayerEvent
     data object Next : PlayerEvent
     data object Previous : PlayerEvent
@@ -56,7 +53,6 @@ class PlayerViewModel @Inject constructor(
     private val settings: SettingsRepository,
 ) : MviViewModel<PlayerUiState, PlayerEvent, Nothing>(PlayerUiState()) {
     init {
-        viewModelScope.launch { canvas.videoOffer.collect { setState { copy(videoOffer = it) } } }
         viewModelScope.launch { canvas.surfaces.collect { setState { copy(canvasSurfaces = it) } } }
         viewModelScope.launch { canvas.state.collect { setState { copy(canvas = it) } } }
         viewModelScope.launch { settings.settings.collect { setState { copy(settings = it) } } }
@@ -91,7 +87,6 @@ class PlayerViewModel @Inject constructor(
             PlayerEvent.NotInterested -> player.removeQueueItem(state.value.player.currentIndex)
             is PlayerEvent.CanvasActive -> setCanvasActive(event.active)
             is PlayerEvent.CanvasSurface -> canvas.setSurface(event.slot, event.surface)
-            PlayerEvent.ToggleVideo -> canvas.toggleFullVideo()
             PlayerEvent.TogglePlay -> player.togglePlayPause()
             PlayerEvent.Next -> player.next()
             PlayerEvent.Previous -> player.previous()
