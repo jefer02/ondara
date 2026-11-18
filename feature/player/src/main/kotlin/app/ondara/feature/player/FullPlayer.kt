@@ -31,13 +31,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,9 +51,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ondara.core.designsystem.component.Label
@@ -59,7 +58,6 @@ import app.ondara.core.designsystem.component.MeshGradientBackground
 import app.ondara.core.designsystem.component.OndaraIconButton
 import app.ondara.core.designsystem.component.OndaraSheet
 import app.ondara.core.designsystem.component.OndaraSlider
-import app.ondara.core.designsystem.component.PlayPauseButton
 import app.ondara.core.designsystem.component.Text
 import app.ondara.core.designsystem.component.grain
 import app.ondara.core.designsystem.icon.OndaraIcons
@@ -67,7 +65,6 @@ import app.ondara.core.designsystem.theme.LocalAudioAmplitude
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.designsystem.theme.PlayerLayout
 import app.ondara.core.model.PlayerState
-import app.ondara.core.model.RepeatMode
 import app.ondara.core.model.Song
 import app.ondara.core.ui.Artwork
 import app.ondara.core.ui.MenuAction
@@ -94,8 +91,14 @@ internal fun FullPlayer(
     val player = state.player
     val song = player.current ?: return
     val layout = resolvePlayerLayout(state.settings.playerLayout, OndaraTheme.spec.playerLayout)
+    val canvasEnabled = active && layout == PlayerLayout.CINEMATIC &&
+        state.settings.videoBackground && !OndaraTheme.motion.reduced
+    DisposableEffect(canvasEnabled) {
+        onEvent(PlayerEvent.CanvasActive(canvasEnabled))
+        onDispose { onEvent(PlayerEvent.CanvasActive(false)) }
+    }
     if (layout == PlayerLayout.CINEMATIC) {
-        CinematicPlayerLayout(state, onEvent, positionFlow, onCollapse, onNavigate, lyrics, sharedScope, visibilityScope, dragModifier, active)
+        CinematicPlayerLayout(state, onEvent, positionFlow, onCollapse, onNavigate, lyrics, sharedScope, visibilityScope, dragModifier)
         return
     }
     if (layout == PlayerLayout.BENTO) {
@@ -105,16 +108,21 @@ internal fun FullPlayer(
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
     val motion = OndaraTheme.motion
-    var showLyrics by rememberSaveable { mutableStateOf(false) }
-    var showQueue by rememberSaveable { mutableStateOf(false) }
-    var showTimer by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
+    var showLyrics by rememberSaveable(layout) { mutableStateOf(false) }
+    var showQueue by rememberSaveable(layout) { mutableStateOf(false) }
+    var showTimer by remember(layout) { mutableStateOf(false) }
+    var showMenu by remember(layout) { mutableStateOf(false) }
 
+    BackHandler(showLyrics || showQueue) {
+        showLyrics = false
+        showQueue = false
+    }
     Box(Modifier.fillMaxSize().background(colors.background).grain(OndaraTheme.spec.grain)) {
         PlayerBackdrop(layout, song)
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             // Barra superior (también es la zona de arrastre para colapsar).
-            Row(Modifier.fillMaxWidth().then(dragModifier).padding(horizontal = spacing.sm, vertical = spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().then(dragModifier).padding(horizontal = spacing.sm, vertical = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically) {
                 OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse)
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Label("Reproduciendo")
@@ -149,21 +157,10 @@ internal fun FullPlayer(
             }
 
             // Título + favorito.
-            val centered = layout == PlayerLayout.VINYL
             Row(Modifier.fillMaxWidth().padding(horizontal = spacing.xxl), verticalAlignment = Alignment.CenterVertically) {
                 with(sharedScope) {
-                    Column(
-                        Modifier.weight(1f).sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope),
-                        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
-                    ) {
-                        val type = OndaraTheme.type
-                        Text(
-                            if (type.uppercaseLabels && layout == PlayerLayout.MINIMAL) song.title.uppercase() else song.title,
-                            Modifier.semantics { heading() },
-                            style = type.display, maxLines = 2, textAlign = if (centered) TextAlign.Center else null,
-                        )
-                        Text(song.artistLine, style = type.headline, color = colors.accent, maxLines = 1)
-                    }
+                    PlayerMetadata(song, Modifier.weight(1f)
+                        .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope))
                 }
                 OndaraIconButton(
                     if (state.favorite) OndaraIcons.HeartFilled else OndaraIcons.Heart,
@@ -176,49 +173,17 @@ internal fun FullPlayer(
 
             Progress(player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, Modifier.padding(horizontal = spacing.xxl))
 
-            // Transporte.
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = spacing.lg),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OndaraIconButton(
-                    OndaraIcons.Shuffle, if (player.shuffle) "Desactivar aleatorio" else "Activar aleatorio", { onEvent(PlayerEvent.ToggleShuffle) },
-                    tint = if (player.shuffle) colors.accent else colors.onMuted, size = 22.dp, haptic = true,
-                )
-                OndaraIconButton(OndaraIcons.Previous, "Anterior", { onEvent(PlayerEvent.Previous) }, size = 34.dp, haptic = true)
-                with(sharedScope) {
-                    PlayPauseButton(
-                        player.isPlaying, { onEvent(PlayerEvent.TogglePlay) },
-                        Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope),
-                        size = if (layout == PlayerLayout.MINIMAL) 64.dp else 76.dp,
-                    )
+            with(sharedScope) {
+                PlayerTransport(player, onEvent, Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope))
+            }
+            PlayerBottomActions(song, { panel ->
+                when (panel) {
+                    "Cola" -> showQueue = true
+                    "Temporizador" -> showTimer = true
                 }
-                OndaraIconButton(OndaraIcons.Next, "Siguiente", { onEvent(PlayerEvent.Next) }, size = 34.dp, enabled = player.hasNext, haptic = true)
-                OndaraIconButton(
-                    if (player.repeatMode == RepeatMode.ONE) OndaraIcons.RepeatOne else OndaraIcons.Repeat,
-                    when (player.repeatMode) {
-                        RepeatMode.OFF -> "Repetir: desactivado"
-                        RepeatMode.ALL -> "Repetir: toda la cola"
-                        RepeatMode.ONE -> "Repetir: esta canción"
-                    },
-                    { onEvent(PlayerEvent.CycleRepeat) },
-                    tint = if (player.repeatMode == RepeatMode.OFF) colors.onMuted else colors.accent, size = 22.dp, haptic = true,
-                )
-            }
-
-            // Acciones secundarias.
-            Row(Modifier.fillMaxWidth().padding(horizontal = spacing.xl, vertical = spacing.sm), horizontalArrangement = Arrangement.SpaceBetween) {
-                OndaraIconButton(
-                    OndaraIcons.Lyrics, if (showLyrics) "Ocultar letra" else "Mostrar letra", { showLyrics = !showLyrics },
-                    tint = if (showLyrics) colors.accent else colors.onMuted, size = 22.dp,
-                )
-                OndaraIconButton(
-                    OndaraIcons.Timer, "Temporizador de sueño", { showTimer = true },
-                    tint = if (player.sleepTimerEndsAtMs != null) colors.accent else colors.onMuted, size = 22.dp,
-                )
-                OndaraIconButton(OndaraIcons.Queue, "Cola de reproducción", { showQueue = true }, tint = colors.onMuted, size = 22.dp)
-            }
+            })
+            LyricsHandle({ showLyrics = !showLyrics }, Modifier.padding(horizontal = spacing.screen), song.thumbnailUrl)
+            Spacer(Modifier.height(spacing.lg))
         }
 
         AnimatedVisibility(
@@ -336,7 +301,10 @@ private fun VinylArtwork(song: Song, playing: Boolean, modifier: Modifier) {
                     // Surcos y brillo del vinilo.
                     val r = size.minDimension / 2
                     for (i in 0..14) drawCircle(Color.White.copy(alpha = 0.045f), r * (0.46f + i * 0.036f), style = Stroke(1.2f))
-                    drawCircle(Brush.sweepGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.10f), Color.Transparent, Color.White.copy(alpha = 0.07f), Color.Transparent)), r)
+                    drawCircle(Brush.sweepGradient(listOf(
+                        Color.Transparent, Color.White.copy(alpha = 0.10f), Color.Transparent,
+                        Color.White.copy(alpha = 0.07f), Color.Transparent,
+                    )), r)
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -354,7 +322,10 @@ private fun MinimalArtwork(song: Song, positionFlow: Flow<Long>, player: PlayerS
     Column(Modifier.fillMaxWidth().padding(horizontal = OndaraTheme.spacing.xxl), verticalArrangement = Arrangement.Center) {
         Artwork(song.thumbnailUrl, modifier.size(112.dp), shape = OndaraTheme.shapes.artwork, sizePx = 544)
         Spacer(Modifier.height(OndaraTheme.spacing.xxl))
-        Text(formatPosition(position), style = OndaraTheme.type.monoLarge.copy(fontSize = OndaraTheme.type.monoLarge.fontSize * 2.4f, lineHeight = OndaraTheme.type.monoLarge.lineHeight * 2.4f), maxLines = 1)
+        Text(formatPosition(position), style = OndaraTheme.type.monoLarge.copy(
+            fontSize = OndaraTheme.type.monoLarge.fontSize * 2.4f,
+            lineHeight = OndaraTheme.type.monoLarge.lineHeight * 2.4f,
+        ), maxLines = 1)
         Text("/ " + formatPosition(player.durationMs), style = OndaraTheme.type.monoLarge, color = colors.onMuted, maxLines = 1)
         Spacer(Modifier.height(OndaraTheme.spacing.lg))
         Box(Modifier.width(40.dp).height(3.dp).background(colors.accent))
@@ -364,16 +335,21 @@ private fun MinimalArtwork(song: Song, positionFlow: Flow<Long>, player: PlayerS
 }
 
 @Composable
-internal fun Progress(player: PlayerState, positionFlow: Flow<Long>, onSeek: (Float) -> Unit, modifier: Modifier = Modifier, light: Boolean = false, foreground: Color = OndaraTheme.colors.onMuted) {
+internal fun Progress(
+    player: PlayerState, positionFlow: Flow<Long>, onSeek: (Float) -> Unit, modifier: Modifier = Modifier,
+    light: Boolean = false, foreground: Color = OndaraTheme.colors.onMuted,
+) {
     val position by positionFlow.collectAsStateWithLifecycle(0L)
     var scrub by remember { mutableStateOf<Float?>(null) }
     val duration = player.durationMs
     val fraction = if (duration > 0) position.toFloat() / duration else 0f
     Column(modifier.fillMaxWidth()) {
         OndaraSlider(fraction, onSeek, activeColor = if (light) Color.White else foreground,
-            trackColor = if (light) Color.White.copy(alpha = .3f) else foreground.copy(alpha = .18f), onScrub = { scrub = it }, description = "Posición de reproducción")
+            trackColor = if (light) Color.White.copy(alpha = .3f) else foreground.copy(alpha = .18f), onScrub = { scrub = it },
+            description = "Posición de reproducción")
         Row(Modifier.fillMaxWidth()) {
-            Text(formatPosition(scrub?.let { (it * duration).toLong() } ?: position), style = OndaraTheme.type.mono, color = if (light) Color.White else foreground)
+            Text(formatPosition(scrub?.let { (it * duration).toLong() } ?: position),
+                style = OndaraTheme.type.mono, color = if (light) Color.White else foreground)
             Spacer(Modifier.weight(1f))
             if (player.isBuffering) Label("Cargando…", color = OndaraTheme.colors.accent) else player.error?.let { Label(it, color = OndaraTheme.colors.error) }
             Spacer(Modifier.weight(1f))

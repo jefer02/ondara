@@ -5,6 +5,8 @@ plugins {
 
 dependencies {
     implementation(project(":source:resolver"))
+    implementation(project(":source:canvas"))
+    implementation(project(":core:network"))
     implementation(libs.androidx.lifecycle.process)
     implementation(project(":core:model"))
     implementation(project(":core:domain"))

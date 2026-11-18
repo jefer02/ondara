@@ -9,6 +9,9 @@ data class ArtistRef(val id: String?, val name: String)
 @Serializable
 data class AlbumRef(val id: String, val title: String)
 
+@Serializable
+enum class MusicVideoType { SONG, OFFICIAL_VIDEO, USER_VIDEO, PODCAST, UNKNOWN }
+
 /** Una pista reproducible. [id] es el `videoId` de YouTube. */
 @Serializable
 data class Song(
@@ -19,6 +22,7 @@ data class Song(
     val durationSec: Int = 0,
     val thumbnailUrl: String? = null,
     val explicit: Boolean = false,
+    val videoType: MusicVideoType = MusicVideoType.UNKNOWN,
 ) {
     val artistLine: String get() = artists.joinToString(", ") { it.name }
 }
@@ -53,6 +57,7 @@ data class Playlist(
     val isLocal: Boolean = false,
     /** De dónde viene: creada en Ondara o traída de una cuenta conectada. */
     val source: PlaylistSource = PlaylistSource.ONDARA,
+    val artworkUrls: List<String> = emptyList(),
 )
 
 enum class PlaylistSource { ONDARA, YOUTUBE, SPOTIFY }

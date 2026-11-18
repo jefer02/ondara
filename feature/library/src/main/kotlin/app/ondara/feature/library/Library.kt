@@ -317,7 +317,7 @@ private fun LazyListScope.libraryGrid(items: List<MusicItem>, columns: Int, pref
                     ), horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     val cover = Modifier.fillMaxWidth().aspectRatio(1f)
-                    if (item is MusicItem.PlaylistItem) PlaylistCover(item.playlist, cover)
+                    if (item is MusicItem.PlaylistItem) PlaylistCover(item.playlist, cover, showTitle = false)
                     else Artwork(item.imageUrl(), cover, shape = if (item is MusicItem.ArtistItem) CircleShape else OndaraTheme.shapes.artwork)
                     Text(item.titleText(), Modifier.fillMaxWidth().padding(top = OndaraTheme.spacing.sm),
                         style = OndaraTheme.type.body, maxLines = 2, textAlign = TextAlign.Center)

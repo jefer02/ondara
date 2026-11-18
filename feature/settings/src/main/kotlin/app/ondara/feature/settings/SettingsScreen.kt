@@ -239,7 +239,7 @@ fun SettingsScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, vie
                 onClick = { openBackup.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }) }
 
         item(key = "about", contentType = "setting") {
-            SettingRow("Acerca de",
+            SettingRow("Acerca de Ondara",
                 icon = OndaraIcons.Info,
                 onClick = { onNavigate(Nav.About) })
         }

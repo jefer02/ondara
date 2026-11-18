@@ -9,6 +9,8 @@ import app.ondara.core.database.CacheDao
 import app.ondara.core.database.PageCacheEntity
 import app.ondara.core.domain.CatalogRepository
 import app.ondara.core.domain.Resource
+import app.ondara.core.domain.SongEquivalenceIndex
+import app.ondara.core.domain.isMusicVideo
 import app.ondara.core.model.AlbumPage
 import app.ondara.core.model.ArtistPage
 import app.ondara.core.model.HomeFeed
@@ -145,14 +147,34 @@ internal class SearchPagingSource(
     private val query: String,
     private val filter: SearchFilter,
 ) : PagingSource<String, MusicItem>() {
+    /**
+     * Completa el resultado principal solo en la primera página de Todo: como máximo 1 petición extra.
+     * O(n + m + l) tiempo y espacio para n resultados, m candidatos y l caracteres de metadatos.
+     * Un fallo auxiliar conserva la página original; la cancelación siempre se propaga.
+     */
     private val seen = HashSet<String>()
+
+    private suspend fun preferSong(items: List<MusicItem>): List<MusicItem> {
+        val first = (items.firstOrNull() as? MusicItem.SongItem)?.song ?: return items
+        if (!first.isMusicVideo() || SongEquivalenceIndex(items).equivalent(first) != null) return items
+        val candidates = try {
+            innerTube.search(query, SearchFilter.SONGS).items
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return items
+        }
+        val song = SongEquivalenceIndex(candidates).equivalent(first) ?: return items
+        return listOf(MusicItem.SongItem(song)) + items
+    }
 
     override fun getRefreshKey(state: PagingState<String, MusicItem>): String? = null
 
     override suspend fun load(params: LoadParams<String>): LoadResult<String, MusicItem> = try {
         val page = params.key?.let { innerTube.searchContinuation(it) } ?: innerTube.search(query, filter)
-        // Las claves de LazyColumn deben ser únicas entre páginas: se filtran repetidos. O(n) con HashSet.
-        val items = page.items.filter { seen.add(it.key) }
+        val ranked = if (params.key == null && filter == SearchFilter.ALL) preferSong(page.items) else page.items
+        // Sin repetidos entre páginas (la UI ya no depende de ello para sus claves). O(n) con HashSet.
+        val items = ranked.filter { seen.add(it.key) }
         LoadResult.Page(items, prevKey = null, nextKey = page.continuation?.takeIf { items.isNotEmpty() })
     } catch (e: CancellationException) {
         throw e

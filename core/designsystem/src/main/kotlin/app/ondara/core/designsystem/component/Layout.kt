@@ -69,8 +69,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -168,7 +177,8 @@ fun ScreenScaffold(
     val density = LocalDensity.current
     val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val large = onBack == null
-    val collapseRange = with(density) { 72.dp.toPx() }
+    var titleHeight by remember { mutableIntStateOf(1) }
+    val collapseRange = titleHeight.toFloat().coerceAtLeast(1f)
     val scrimRange = with(density) { 20.dp.toPx() }
     val offset by remember(listState) {
         derivedStateOf { if (listState.firstVisibleItemIndex > 0) Float.MAX_VALUE else listState.firstVisibleItemScrollOffset.toFloat() }
@@ -189,11 +199,16 @@ fun ScreenScaffold(
                 Column(
                     Modifier
                         .fillMaxWidth()
+                        .onSizeChanged { titleHeight = it.height }
+                        .drawWithContent {
+                            // El área que cruza la barra deja de dibujarse y no entra en la fuente Haze.
+                            clipRect(top = offset.coerceIn(0f, size.height)) { this@drawWithContent.drawContent() }
+                        }
                         .padding(horizontal = OndaraTheme.spacing.screen)
                         .padding(top = if (large) 0.dp else OndaraTheme.spacing.xs, bottom = OndaraTheme.spacing.lg)
                         .graphicsLayer {
                             // El título grande se encoge hacia su esquina y se desvanece.
-                            val t = (offset / collapseRange).coerceIn(0f, 1f)
+                            val t = (offset / (collapseRange * 0.65f)).coerceIn(0f, 1f)
                             val s = 1f - t * 0.2f
                             scaleX = s
                             scaleY = s
@@ -227,12 +242,12 @@ fun ScreenScaffold(
                                 haze,
                                 HazeStyle(
                                     backgroundColor = colors.background,
-                                    tints = listOf(HazeTint(colors.background.copy(alpha = 0.55f))),
+                                    tints = listOf(HazeTint(colors.background.copy(alpha = 0.92f))),
                                     blurRadius = materials.blur,
                                     noiseFactor = 0f,
                                     fallbackTint = HazeTint(colors.background.copy(alpha = 0.92f)),
                                 ),
-                            ) { progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0.35f) }
+                            ) { progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0.85f) }
                         } else {
                             Modifier.background(colors.background)
                         },
@@ -299,6 +314,7 @@ fun OndaraNavigation(
     }
 }
 
+/** Medición y reparto O(n + l) para n pestañas y l caracteres; desplazamiento O(1) por frame. */
 @Composable
 private fun GlassPillNav(
     items: List<NavItem>,
@@ -325,7 +341,21 @@ private fun GlassPillNav(
         val gap = OndaraTheme.spacing.sm
         val expandedWidth = maxWidth - if (search != null) NavPillHeight + gap else 0.dp
         val inner = 5.dp
-        val slot = (expandedWidth - inner * 2) / items.size
+        val measurer = rememberTextMeasurer()
+        val type = OndaraTheme.type
+        val widths = remember(items, type, measurer) {
+            items.map { item ->
+                val label = if (type.uppercaseLabels) item.label.uppercase() else item.label
+                measurer.measure(label, type.label, softWrap = false).size.width.toFloat()
+            }
+        }
+        val available = expandedWidth - inner * 2
+        val minimum = OndaraTheme.spacing.touch
+        val extra = (available - minimum * items.size).coerceAtLeast(0.dp)
+        val totalWidth = widths.sum().coerceAtLeast(1f)
+        val slots = widths.map { minimum + extra * (it / totalWidth) }
+        val starts = slots.runningFold(0.dp) { sum, width -> sum + width }
+        val slot = slots[lastTab]
         val highlight = colors.onBackground.copy(alpha = if (colors.isDark) 0.14f else 0.1f)
         GlassSurface(
             Modifier
@@ -343,7 +373,7 @@ private fun GlassPillNav(
             Box(
                 Modifier.fillMaxSize().wrapContentWidth(Alignment.Start, unbounded = true).graphicsLayer {
                     // Al encogerse, la fila se desliza para dejar el icono activo centrado en el círculo.
-                    val collapsedShift = -(inner + slot * lastTab + slot / 2 - NavPillHeight / 2).toPx()
+                    val collapsedShift = -(inner + starts[lastTab] + slot / 2 - NavPillHeight / 2).toPx()
                     translationX = collapsedShift * t.coerceIn(0f, 1f)
                 },
             ) {
@@ -352,7 +382,9 @@ private fun GlassPillNav(
                     Modifier
                         .padding(vertical = inner)
                         .graphicsLayer {
-                            translationX = (inner + slot * indicator).toPx()
+                            val from = indicator.toInt().coerceIn(items.indices)
+                            val to = (from + 1).coerceAtMost(items.lastIndex)
+                            translationX = (inner + lerp(starts[from], starts[to], indicator - from)).toPx()
                             alpha = indicatorAlpha * (1f - t).coerceIn(0f, 1f)
                         }
                         .width(slot)
@@ -360,13 +392,13 @@ private fun GlassPillNav(
                         .clip(CircleShape)
                         .background(highlight),
                 )
-                Row(Modifier.padding(horizontal = inner).fillMaxHeight().width(slot * items.size)) {
+                Row(Modifier.padding(horizontal = inner).fillMaxHeight().width(available)) {
                     items.forEachIndexed { i, item ->
                         val active = i == selected
                         val tint = if (active || (i == lastTab && collapsed)) colors.accent else colors.onBackground
                         Column(
                             Modifier
-                                .width(slot)
+                                .width(slots[i])
                                 .fillMaxHeight()
                                 .graphicsLayer { alpha = if (i == lastTab) 1f else (1f - t * 1.6f).coerceIn(0f, 1f) }
                                 .then(if (collapsed) Modifier else Modifier.pressable(haptic = true, role = Role.Tab) { onSelect(i) })
@@ -378,7 +410,7 @@ private fun GlassPillNav(
                             verticalArrangement = Arrangement.Center,
                         ) {
                             Icon(item.icon, null, Modifier.graphicsLayer { translationY = 7.dp.toPx() * t.coerceIn(0f, 1f) }, tint = tint, size = 22.dp)
-                            Label(
+                            NavigationLabel(
                                 item.label,
                                 Modifier.padding(top = 2.dp).graphicsLayer { alpha = (1f - t * 2f).coerceIn(0f, 1f) },
                                 color = tint,
@@ -407,6 +439,28 @@ private fun GlassPillNav(
     }
 }
 
+/**
+ * Etiqueta de pestaña que siempre se lee completa: si no cabe en su ancho (fuente del sistema grande), baja la
+ * fuente en pasos de 0,25 sp con el *auto-size* de Compose hasta [NavLabelMinSize]; nunca recorta con elipsis.
+ * Búsqueda por pasos: O(k·l) en el peor caso para k pasos y l caracteres, solo al cambiar ancho o texto.
+ */
+@Composable
+internal fun NavigationLabel(label: String, modifier: Modifier = Modifier, color: Color = OndaraTheme.colors.onMuted) {
+    val type = OndaraTheme.type
+    val style = type.label
+    BasicText(
+        if (type.uppercaseLabels) label.uppercase() else label,
+        modifier,
+        style = style.merge(TextStyle(color = color, textAlign = TextAlign.Center)),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+        autoSize = TextAutoSize.StepBased(minFontSize = NavLabelMinSize, maxFontSize = style.fontSize, stepSize = 0.25.sp),
+    )
+}
+
+private val NavLabelMinSize = 7.sp
+
 @Composable
 private fun BottomBarNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier) {
     val colors = OndaraTheme.colors
@@ -426,7 +480,7 @@ private fun BottomBarNav(items: List<NavItem>, selected: Int, onSelect: (Int) ->
                 ) {
                     Icon(item.icon, null, tint = tint)
                     Spacer(Modifier.height(3.dp))
-                    Label(item.label, color = tint)
+                    NavigationLabel(item.label, color = tint)
                 }
             }
         }

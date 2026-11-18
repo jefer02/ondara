@@ -32,44 +32,23 @@ class VideoResolverTest {
     // ---- Selección de pista ---------------------------------------------------------------------
 
     @Test
-    fun `prefers the lowest quality inside 360p-480p`() {
-        assertEquals(360, pick(candidate(144), candidate(240), candidate(360), candidate(480), candidate(720), candidate(1080))?.height)
-        assertEquals(480, pick(candidate(144), candidate(480), candidate(720), candidate(1080))?.height)
-    }
-
-    @Test
-    fun `falls back to the closest quality up to 720p`() {
-        // 240p queda a 120 líneas del rango y 720p a 240: gana 240p.
-        assertEquals(240, pick(candidate(144), candidate(240), candidate(720), candidate(1080))?.height)
-        assertEquals(720, pick(candidate(720), candidate(1080))?.height)
-        assertEquals(144, pick(candidate(144), candidate(1080))?.height)
-    }
-
-    @Test
-    fun `nothing above 720p is ever chosen`() {
-        assertNull(pick(candidate(1080), candidate(2160)))
+    fun `canvas prefiere 1080 y despues 720 sin elegir SD si hay HD`() {
+        assertEquals(1080, pick(candidate(360), candidate(480), candidate(720), candidate(1080))?.height)
+        assertEquals(720, pick(candidate(360), candidate(720))?.height)
+        assertEquals(2160, pick(candidate(360), candidate(2160))?.height)
+        assertEquals(480, pick(candidate(360), candidate(480))?.height)
         assertNull(pick())
         assertNull(pick(candidate(0)))
     }
 
     @Test
-    fun `same height prefers avc then vp9 then av1 and then the lighter one`() {
-        val avc = candidate(360)
-        val vp9 = candidate(360, "video/webm; codecs=\"vp9\"", bitrate = 100_000)
-        val av1 = candidate(360, "video/mp4; codecs=\"av01.0.01M.08\"", bitrate = 50_000)
+    fun `a igual altura prefiere avc y despues vp9`() {
+        val avc = candidate(1080)
+        val vp9 = candidate(1080, "video/webm; codecs=vp9")
+        val av1 = candidate(1080, "video/mp4; codecs=av01")
         assertEquals(avc, pick(av1, vp9, avc))
         assertEquals(vp9, pick(av1, vp9))
-        val light = candidate(360, bitrate = 200_000)
-        assertEquals(light, pick(avc, light))
-    }
-
-    @Test
-    fun `muxed stream is the best one up to 720p`() {
-        val muxed = { h: Int -> candidate(h).copy(hasAudio = true) }
-        assertEquals(720, VideoSelection.pickMuxed(listOf(muxed(360), muxed(720), muxed(1080)))?.height)
-        assertEquals(360, VideoSelection.pickMuxed(listOf(muxed(360)))?.height)
-        assertEquals(1080, VideoSelection.pickMuxed(listOf(muxed(1080), muxed(1440)))?.height)
-        assertNull(VideoSelection.pickMuxed(emptyList()))
+        assertEquals(1080, VideoSelection.pickMuxed(listOf(candidate(720), avc))?.height)
     }
 
     @Test
@@ -100,7 +79,8 @@ class VideoResolverTest {
           "videoDetails": {"videoId": "vid", "author": "Artista", "lengthSeconds": "215"${type?.let { ", \"musicVideoType\": \"$it\"" } ?: ""}},
           "streamingData": {
             "formats": [
-              {"itag": 18, "url": "https://g/muxed?expire=1700003600", "mimeType": "video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"", "width": 640, "height": 360, "bitrate": 500000}
+              {"itag": 18, "url": "https://g/muxed?expire=1700003600", "mimeType": "video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+               "width": 640, "height": 360, "bitrate": 500000}
             ],
             "adaptiveFormats": [
               ${if (withVideo) """
@@ -117,10 +97,10 @@ class VideoResolverTest {
     ).jsonObject
 
     @Test
-    fun `innertube parser picks the 360p video-only track, the muxed one and the audio pair`() {
+    fun `parser innertube elige video 1080p separado del audio`() {
         val video = strategy().parseVideo("vid", playerJson("MUSIC_VIDEO_TYPE_OMV"), "ANDROID")
-        assertEquals("https://g/360?expire=1700007200", video.videoOnly?.url)
-        assertEquals(360, video.videoOnly?.height)
+        assertEquals("https://g/1080?expire=1700007200", video.videoOnly?.url)
+        assertEquals(1080, video.videoOnly?.height)
         assertFalse(video.videoOnly!!.hasAudio)
         assertEquals("https://g/muxed?expire=1700003600", video.muxed?.url)
         assertTrue(video.muxed!!.hasAudio)

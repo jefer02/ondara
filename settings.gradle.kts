@@ -22,7 +22,7 @@ include(
     ":core:model", ":core:domain", ":core:data", ":core:database", ":core:datastore",
     ":core:network", ":core:designsystem", ":core:ui",
 )
-include(":source:innertube", ":source:resolver", ":source:lyrics", ":source:spotify")
+include(":source:innertube", ":source:resolver", ":source:lyrics", ":source:canvas", ":source:spotify")
 include(":playback")
 include(
     ":feature:home", ":feature:search", ":feature:library", ":feature:player",

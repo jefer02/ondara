@@ -154,7 +154,10 @@ class PersonalRepositoryImpl @Inject constructor(
         emit(computed)
     }.flowOn(Dispatchers.IO)
 
-    /** O(h) sobre las reproducciones de los últimos 90 días + O(a) páginas de artista (cacheadas 24 h). */
+    /**
+     * O(h log h + m·n + a) local para historial h, m mixes y n canciones; O(a + m·s) peticiones
+     * cacheadas para artistas a y semillas s. Los metadatos usan las mismas instantáneas que la reproducción.
+     */
     private suspend fun buildHome(): PersonalHome {
         val now = System.currentTimeMillis()
         val plays = library.playsSince(now - RECENT_WINDOW_MS)
@@ -165,21 +168,23 @@ class PersonalRepositoryImpl @Inject constructor(
             val page = pages.firstOrNull { it.first.id == ref.id }?.second
             Artist(ref.id!!, ref.name, page?.artist?.thumbnailUrl ?: plays.firstOrNull { s -> s.artists.any { it.id == ref.id } }?.thumbnailUrl)
         }
+        val mixes = MIXES.mapNotNull { (id, _) -> virtualPlaylist(id)?.playlist }
+            .filter { it.artworkUrls.isNotEmpty() }
         val picks = ArrayList<TopPick>()
-        picks += TopPick(
-            "Tus favoritas",
-            MusicItem.PlaylistItem(
-                Playlist(MixIds.FAVORITES, "Tus favoritas", songCount = favorites.size, thumbnailUrl = favorites.firstOrNull()?.thumbnailUrl, isLocal = true),
-            ),
-        )
-        stations.firstOrNull()?.let { top ->
-            picks += TopPick("Porque escuchaste ${top.name}", stationItem(top))
+        if (favorites.isNotEmpty()) {
+            picks += TopPick("Lo que más escuchas", MusicItem.PlaylistItem(page(MixIds.FAVORITES, "Tus favoritas", favorites).playlist))
         }
-        picks += TopPick("Mix nuevo", MusicItem.PlaylistItem(Playlist(MixIds.DISCOVER, "Mix Descubrir")))
-        stations.drop(1).take(2).forEach { artist -> picks += TopPick("Más de ${artist.name}", stationItem(artist)) }
+        stations.take(3).forEach { artist ->
+            virtualPlaylist(MixIds.STATION_PREFIX + artist.id)?.playlist?.takeIf { it.artworkUrls.isNotEmpty() }?.let {
+                picks += TopPick("Porque escuchaste ${artist.name}", MusicItem.PlaylistItem(it))
+            }
+        }
+        mixes.firstOrNull { it.id == MixIds.DISCOVER }?.let {
+            picks += TopPick("Música nueva para ti", MusicItem.PlaylistItem(it))
+        }
         return PersonalHome(
             topPicks = picks,
-            mixes = MIXES.map { (id, title) -> Playlist(id, title) },
+            mixes = mixes,
             releases = pages.flatMap { (_, page) -> latestReleases(page) }
                 .distinctBy { it.key }
                 .sortedByDescending { (it as? MusicItem.AlbumItem)?.album?.year ?: 0 }
@@ -190,11 +195,17 @@ class PersonalRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun stationItem(artist: Artist) =
-        MusicItem.PlaylistItem(Playlist(MixIds.STATION_PREFIX + artist.id, "Mix ${artist.name}", thumbnailUrl = artist.thumbnailUrl))
-
-    private suspend fun <T> firstData(source: () -> Flow<Resource<T>>): T? =
-        (runCatching { source().firstOrNull { it !is Resource.Loading } }.getOrNull() as? Resource.Success)?.data
+    private suspend fun <T> firstData(source: () -> Flow<Resource<T>>): T? = try {
+        when (val result = source().firstOrNull { it !is Resource.Loading }) {
+            is Resource.Success -> result.data
+            is Resource.Error -> result.cached
+            else -> null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
 
     private suspend fun artistPage(id: String): ArtistPage? = firstData { catalog.artist(id) }
 
@@ -254,8 +265,12 @@ class PersonalRepositoryImpl @Inject constructor(
         }
     }
 
+    /** Metadatos de canciones reales: O(n + a log a) tiempo y O(a) espacio para a artistas distintos. */
     private fun page(id: String, title: String, songs: List<Song>) = PlaylistPage(
-        Playlist(id, title, author = "Ondara", songCount = songs.size, thumbnailUrl = if (id == MixIds.FAVORITES) songs.firstOrNull()?.thumbnailUrl else null),
+        Playlist(
+            id, title, author = app.ondara.core.model.mixSubtitle(songs), songCount = songs.size,
+            artworkUrls = songs.asSequence().mapNotNull { it.thumbnailUrl }.filter { it.isNotBlank() }.distinct().take(4).toList(),
+        ),
         songs,
     )
 
@@ -264,10 +279,7 @@ class PersonalRepositoryImpl @Inject constructor(
         val seed = artist.topSongs.firstOrNull()
         val radio = seed?.let { runCatching { catalog.radio(it.id, artist.radioPlaylistId) }.getOrNull() }.orEmpty()
         val songs = (artist.topSongs.take(STATION_TOP) + radio).distinctBy { it.id }
-        return PlaylistPage(
-            Playlist(id, "Radio de ${artist.artist.name}", author = "Ondara", songCount = songs.size, thumbnailUrl = artist.artist.thumbnailUrl),
-            songs,
-        )
+        return page(id, "Radio de ${artist.artist.name}", songs)
     }
 
     /**
@@ -279,7 +291,8 @@ class PersonalRepositoryImpl @Inject constructor(
         val top = played.rankBy { it.id }.map { it.first }
         val heard = played.mapTo(HashSet()) { it.id }
         return when (id) {
-            MixIds.FAVORITES_MIX -> (library.favorites().first() + top.take(MIX_SIZE)).distinctBy { it.id }.shuffled(Random(seed)).take(MIX_SIZE)
+            MixIds.FAVORITES_MIX -> (library.favorites().first() + top.take(MIX_SIZE).ifEmpty { newsSongs() })
+                .distinctBy { it.id }.shuffled(Random(seed)).take(MIX_SIZE)
             MixIds.DISCOVER -> related(top.take(SEEDS).ifEmpty { fallbackSeeds() }, heard)
             MixIds.NEW -> (newsSongs() + related(played.distinctBy { it.id }.take(SEEDS), heard)).distinctBy { it.id }.take(MIX_SIZE)
             MixIds.CALM -> calmSongs().ifEmpty { related(fallbackSeeds(), emptySet()) }
@@ -300,8 +313,19 @@ class PersonalRepositoryImpl @Inject constructor(
         return out.take(MIX_SIZE)
     }
 
-    private suspend fun newsSongs(): List<Song> =
-        firstData { catalog.news() }.orEmpty().flatMap { it.items }.mapNotNull { (it as? MusicItem.SongItem)?.song }.distinctBy { it.id }
+    /** Canciones reales de Novedades; si solo hay álbumes/playlists, abre hasta tres. O(n), hasta 4 peticiones. */
+    private suspend fun newsSongs(): List<Song> {
+        val items = firstData { catalog.news() }.orEmpty().flatMap { it.items }
+        val songs = items.mapNotNull { (it as? MusicItem.SongItem)?.song }
+        if (songs.isNotEmpty()) return songs.distinctBy { it.id }
+        return items.filter { it is MusicItem.PlaylistItem || it is MusicItem.AlbumItem }.take(SEEDS).flatMap {
+            when (it) {
+                is MusicItem.PlaylistItem -> firstData { catalog.playlist(it.playlist.id) }?.songs.orEmpty()
+                is MusicItem.AlbumItem -> firstData { catalog.album(it.album.id) }?.songs.orEmpty()
+                else -> emptyList()
+            }
+        }.distinctBy { it.id }.take(MIX_SIZE)
+    }
 
     /** Sin historial, las semillas salen de las tendencias. */
     private suspend fun fallbackSeeds(): List<Song> = newsSongs().take(SEEDS)
@@ -345,7 +369,7 @@ class PersonalRepositoryImpl @Inject constructor(
     }
 
     private companion object {
-        const val HOME_KEY = "personal_home"
+        const val HOME_KEY = "personal_home_artwork_v2"
         const val HOME_TTL_MS = 6 * 3_600_000L
         const val RECENT_WINDOW_MS = 90L * 24 * 3_600_000
         const val WEEK_MS = 7L * 24 * 3_600_000

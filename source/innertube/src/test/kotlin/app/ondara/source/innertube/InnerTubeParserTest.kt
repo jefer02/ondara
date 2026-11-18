@@ -1,5 +1,6 @@
 package app.ondara.source.innertube
 
+import app.ondara.core.model.MusicVideoType
 import app.ondara.core.model.MusicItem
 import app.ondara.core.model.SearchFilter
 import app.ondara.core.network.HttpClientFactory
@@ -25,11 +26,53 @@ class InnerTubeParserTest {
     private fun fixture(name: String): JsonObject = Json.parseToJsonElement(fixtureText(name)).jsonObject
 
     @Test
+    fun `tarjetas de dos filas conservan todos los tipos de reproduccion`() {
+        val types = mapOf(
+            "ATV" to MusicVideoType.SONG,
+            "OMV" to MusicVideoType.OFFICIAL_VIDEO,
+            "UGC" to MusicVideoType.USER_VIDEO,
+            "PODCAST_EPISODE" to MusicVideoType.PODCAST,
+            "SHOULDER" to MusicVideoType.UNKNOWN,
+        )
+        for ((remote, expected) in types) {
+            val renderer = Json.parseToJsonElement(
+                """{
+                    "title":{"runs":[{"text":"Título"}]},
+                    "navigationEndpoint":{"watchEndpoint":{"videoId":"id",
+                        "watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"MUSIC_VIDEO_TYPE_$remote"}}}}
+                }""",
+            )
+            assertEquals(expected, (InnerTubeParser.twoRowItem(renderer) as MusicItem.SongItem).song.videoType)
+        }
+    }
+
+    @Test
+    fun `renderers incompletos se descartan sin lanzar`() {
+        assertTrue(InnerTubeParser.search(fixture("search_incomplete")).items.isEmpty())
+    }
+
+    @Test
+    fun `sin artista ni duracion conserva valores por defecto y lee endpoint directo`() {
+        val renderer = Json.parseToJsonElement(
+            """{
+                "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Título"}]}}}],
+                "navigationEndpoint":{"watchEndpoint":{"videoId":"id",
+                    "watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"MUSIC_VIDEO_TYPE_UGC"}}}}
+            }""",
+        )
+        val song = (InnerTubeParser.listItem(renderer) as MusicItem.SongItem).song
+        assertEquals(0, song.durationSec)
+        assertTrue(song.artists.isEmpty())
+        assertEquals(MusicVideoType.USER_VIDEO, song.videoType)
+    }
+
+    @Test
     fun `search songs yields songs with artist, duration and continuation`() {
         val page = InnerTubeParser.search(fixture("search_songs"))
         val songs = page.items.filterIsInstance<MusicItem.SongItem>().map { it.song }
         assertEquals(page.items.size, songs.size)
         assertTrue(songs.size >= 10)
+        assertTrue(songs.all { it.videoType == MusicVideoType.SONG })
         assertTrue(songs.all { it.id.length == 11 && it.title.isNotBlank() })
         assertTrue(songs.count { it.durationSec > 0 } >= songs.size - 1)
         assertTrue(songs.any { s -> s.artists.any { it.name == "Daft Punk" && it.id != null } })
@@ -56,6 +99,9 @@ class InnerTubeParserTest {
     fun `unfiltered search mixes types and has no continuation`() {
         val page = InnerTubeParser.search(fixture("search_all"))
         assertTrue(page.items.any { it is MusicItem.SongItem })
+        val types = page.items.filterIsInstance<MusicItem.SongItem>().map { it.song.videoType }.toSet()
+        assertTrue(MusicVideoType.SONG in types)
+        assertTrue(MusicVideoType.OFFICIAL_VIDEO in types)
         assertTrue(page.items.map { it::class }.distinct().size >= 2)
         assertEquals(null, page.continuation)
     }

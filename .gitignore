@@ -12,3 +12,9 @@ captures/
 signing.properties
 contraseña.txt
 contrasena.txt
+
+# Registros de agentes Codex
+.codex-tasks/
+
+# Captura local de referencia
+docs/referencias/ref6_problemas_app.png

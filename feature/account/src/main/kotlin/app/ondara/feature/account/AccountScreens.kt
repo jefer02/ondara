@@ -86,6 +86,7 @@ fun AccountSheetContent(
         listOf("Temas" to Nav.Themes, "Ajustes" to Nav.Settings, "Descargas" to Nav.Downloads, "Acerca de" to Nav.About).forEach { (title, nav) ->
             OndaraButton(title, { event(AccountEvent.Navigate(nav)) }, modifier = Modifier.fillMaxWidth(), style = ButtonStyle.GHOST)
         }
+        AuthorFooter("Ondara · por ${OndaraAuthor.NAME}", onClick = { event(AccountEvent.Navigate(Nav.About)) })
     }
     if (state.removal != null) OndaraDialog(
         "Cerrar sesión", { event(AccountEvent.AskRemove(null)) }, "Desconectar", { event(AccountEvent.Remove) },
@@ -209,21 +210,4 @@ private fun SpotifyWebLogin(event: (AccountEvent) -> Unit) {
             }
         },
     )
-}
-
-@Composable
-fun AboutScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
-    ScreenScaffold("Acerca de", modifier, onBack = { onNavigate(Nav.Back) }) {
-        item(key = "créditos", contentType = "texto") {
-            Column(verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.lg)) {
-                Text("Ondara $version", style = OndaraTheme.type.display)
-                Text("Licencia GPL-3.0")
-                Text("YouTube Music vía InnerTube · NewPipe Extractor · Echo Music y Metrolist por las técnicas de sesión y Spotify · LRCLIB / KuGou")
-                Text("Tipografías OFL: Space Grotesk, Inter, JetBrains Mono, Doto, Fraunces, Unbounded, Fredoka y Nunito.")
-                Text("Ondara no está afiliada a YouTube, Spotify ni Apple.")
-            }
-        }
-    }
 }

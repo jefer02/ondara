@@ -148,7 +148,10 @@ fun ThemeEditorScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, 
             }
         }
         item(key = "save") {
-            OndaraButton("Guardar y aplicar", { viewModel.onEvent(ThemesEvent.Save(draft)) }, Modifier.fillMaxWidth().padding(spacing.screen), icon = OndaraIcons.Check)
+            OndaraButton(
+                "Guardar y aplicar", { viewModel.onEvent(ThemesEvent.Save(draft, applyPlayerLayout = layout != base.playerLayout)) },
+                Modifier.fillMaxWidth().padding(spacing.screen), icon = OndaraIcons.Check,
+            )
             Text("Se guarda como JSON; puedes exportarlo desde la galería.", Modifier.padding(horizontal = spacing.screen), style = OndaraTheme.type.caption, color = OndaraTheme.colors.onMuted)
         }
     }

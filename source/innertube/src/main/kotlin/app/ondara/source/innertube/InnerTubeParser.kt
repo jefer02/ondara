@@ -8,6 +8,7 @@ import app.ondara.core.model.ArtistPage
 import app.ondara.core.model.ArtistRef
 import app.ondara.core.model.HomeShelf
 import app.ondara.core.model.MoodCategory
+import app.ondara.core.model.MusicVideoType
 import app.ondara.core.model.MusicItem
 import app.ondara.core.model.Playlist
 import app.ondara.core.model.PlaylistPage
@@ -239,12 +240,11 @@ object InnerTubeParser {
     private fun anyItem(wrapper: JsonElement?): MusicItem? =
         wrapper[TWO_ROW]?.let(::twoRowItem) ?: wrapper[LIST_ITEM]?.let(::listItem)
 
-    /** Fila de lista: canción, o álbum/artista/playlist en resultados de búsqueda. */
+    /** Fila tolerante a metadatos ausentes; sin título o id se descarta. O(n) sobre el renderer. */
     @Suppress("ReturnCount") // parser tolerante: cada dato ausente es una salida temprana
     fun listItem(r: JsonElement?): MusicItem? {
         if (r == null) return null
         val columns = r["flexColumns"].array.map { it.path("musicResponsiveListItemFlexColumnRenderer", "text", "runs") }
-        val titleRun = columns.firstOrNull()[0]
         val title = columns.firstOrNull().runsText() ?: return null
         val detailRuns = columns.drop(1).flatMap { it.array }
         val thumb = r["thumbnail"].bestThumbnail()
@@ -276,9 +276,11 @@ object InnerTubeParser {
         }
 
         val videoId = r.path("playlistItemData", "videoId").string
-            ?: titleRun.path("navigationEndpoint", "watchEndpoint", "videoId").string
+            ?: columns.firstOrNull().findFirst("watchEndpoint")["videoId"].string
             ?: r["overlay"].findFirst("watchEndpoint")["videoId"].string
+            ?: r.path("navigationEndpoint", "watchEndpoint", "videoId").string
             ?: return null
+        if (videoId.isBlank()) return null
         val fixed = r["fixedColumns"].array
             .mapNotNull { it.path("musicResponsiveListItemFixedColumnRenderer", "text", "runs").runsText() }
         return MusicItem.SongItem(
@@ -287,6 +289,7 @@ object InnerTubeParser {
                 title = title,
                 artists = detailRuns.artistRefsOrLoose(detailText),
                 album = detailRuns.albumRef(),
+                videoType = musicVideoType(columns.firstOrNull(), r["overlay"], r["navigationEndpoint"]),
                 durationSec = (detailText + fixed).firstOrNull(DURATION::matches).toSeconds(),
                 thumbnailUrl = thumb,
                 explicit = r["badges"].isExplicit(),
@@ -294,7 +297,7 @@ object InnerTubeParser {
         )
     }
 
-    /** Tarjeta de dos filas de los carruseles. */
+    /** Tarjeta de dos filas de los carruseles. O(n) sobre el renderer. */
     fun twoRowItem(r: JsonElement?): MusicItem? {
         val title = r.path("title", "runs").runsText() ?: return null
         val nav = r["navigationEndpoint"]
@@ -303,7 +306,11 @@ object InnerTubeParser {
         val thumb = r["thumbnailRenderer"].bestThumbnail()
         nav.path("watchEndpoint", "videoId").string?.let { id ->
             return MusicItem.SongItem(
-                Song(id, title, subtitle.artistRefsOrLoose(subText), subtitle.albumRef(), thumbnailUrl = thumb, explicit = r["subtitleBadges"].isExplicit()),
+                Song(
+                    id, title, subtitle.artistRefsOrLoose(subText), subtitle.albumRef(), thumbnailUrl = thumb,
+                    explicit = r["subtitleBadges"].isExplicit(),
+                    videoType = musicVideoType(nav, r.path("title", "runs"), r["overlay"]),
+                ),
             )
         }
         val browse = nav["browseEndpoint"]
@@ -323,6 +330,20 @@ object InnerTubeParser {
             else -> null
         }
     }
+
+    /** Busca el tipo únicamente en endpoints de reproducción. O(n) sobre los nodos recibidos. */
+    private fun musicVideoType(vararg roots: JsonElement?): MusicVideoType = roots.asSequence()
+        .flatMap { it.findAll("watchEndpoint").asSequence() }
+        .map { it.path("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType").string }
+        .map { type ->
+            when (type) {
+                "MUSIC_VIDEO_TYPE_ATV" -> MusicVideoType.SONG
+                "MUSIC_VIDEO_TYPE_OMV" -> MusicVideoType.OFFICIAL_VIDEO
+                "MUSIC_VIDEO_TYPE_UGC" -> MusicVideoType.USER_VIDEO
+                "MUSIC_VIDEO_TYPE_PODCAST_EPISODE" -> MusicVideoType.PODCAST
+                else -> MusicVideoType.UNKNOWN
+            }
+        }.firstOrNull { it != MusicVideoType.UNKNOWN } ?: MusicVideoType.UNKNOWN
 
     // ---- Utilidades ---------------------------------------------------------------------------
 
@@ -352,7 +373,9 @@ object InnerTubeParser {
 
     private fun List<JsonElement>.albumRef(): AlbumRef? = firstNotNullOfOrNull { run ->
         val browse = run.path("navigationEndpoint", "browseEndpoint")
-        if (browse.pageType() == "MUSIC_PAGE_TYPE_ALBUM") AlbumRef(browse["browseId"].string ?: return@firstNotNullOfOrNull null, run["text"].string.orEmpty()) else null
+        if (browse.pageType() == "MUSIC_PAGE_TYPE_ALBUM") {
+            AlbumRef(browse["browseId"].string ?: return@firstNotNullOfOrNull null, run["text"].string.orEmpty())
+        } else null
     }
 
     /** Segmentos de un subtítulo que no son separadores, tipos ("Song"), años, duraciones ni conteos. */

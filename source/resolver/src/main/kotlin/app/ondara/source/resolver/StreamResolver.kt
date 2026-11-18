@@ -75,8 +75,8 @@ class StreamResolver(
     fun invalidate(videoId: String, quality: AudioQuality) = cache.invalidate(cacheKey(videoId, quality))
 
     /**
-     * Resuelve las pistas de **vídeo** de [videoId] para el layout "Cine": solo vídeo de baja calidad
-     * (360p–480p) más un stream con audio para el modo "vídeo completo". Devuelve `null` si ninguna
+     * Resuelve las pistas de **vídeo** de [videoId] para Canvas, con preferencia por 1080p sin audio.
+     * Conserva también las pistas progresivas por compatibilidad. Devuelve `null` si ninguna
      * estrategia encuentra vídeo (nunca lanza, salvo cancelación).
      *
      * Misma forma que [resolve]: acierto de caché **O(1)**; fallo **O(k)** llamadas de red con k

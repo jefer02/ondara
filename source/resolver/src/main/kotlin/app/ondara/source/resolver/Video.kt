@@ -1,3 +1,4 @@
+// Adaptado de Echo Music (https://github.com/EchoMusicApp/Echo-Music), GPL-3.0.
 package app.ondara.source.resolver
 
 /** Una pista de vídeo reproducible (URL directa de googlevideo). */
@@ -15,8 +16,8 @@ data class VideoStream(
 /**
  * Resultado de resolver el **vídeo** de un `videoId` (layout "Cine").
  *
- * - [videoOnly]: pista adaptativa sin audio y de baja calidad (360p–480p preferido) para el fondo mudo.
- * - [muxed]: stream progresivo con audio, para el modo "vídeo completo".
+ * - [videoOnly]: pista adaptativa sin audio, preferentemente 1080p, para el canvas.
+ * - [muxed]: stream progresivo con audio, conservado por compatibilidad con el resolver.
  * - [audioUrl]: mejor pista de audio suelta; junto con [videoOnly] forma el par vídeo+audio cuando no hay [muxed].
  * - [isArtTrack]: `true` si YouTube solo tiene una imagen fija (canción de YouTube Music sin vídeo).
  */
@@ -32,6 +33,8 @@ data class ResolvedVideo(
     val expiresAtMs: Long,
     /** Nombre de la estrategia que lo produjo. */
     val source: String,
+    /** Autor declarado por el extractor, para validar el respaldo de canvas. */
+    val author: String? = null,
 ) {
     /** Hay algo que pintar: una pista de solo vídeo o, en su defecto, la progresiva. */
     val hasVideo: Boolean get() = videoOnly != null || muxed != null
@@ -104,9 +107,7 @@ internal data class VideoCandidate(
 
 /** Criterio de selección de pistas de vídeo y detección de "art tracks". Todo puro. */
 internal object VideoSelection {
-    const val PREFERRED_MIN_HEIGHT = 360
-    const val PREFERRED_MAX_HEIGHT = 480
-    const val MAX_HEIGHT = 720
+    const val MAX_HEIGHT = 1080
 
     /**
      * Preferencia de códec: H.264 (decodificación por hardware en todos los dispositivos) → VP9 →
@@ -124,37 +125,24 @@ internal object VideoSelection {
         }
     }
 
-    /** Distancia en líneas al rango preferido 360p–480p (0 si está dentro). */
-    fun distanceToPreferred(height: Int): Int = when {
-        height < PREFERRED_MIN_HEIGHT -> PREFERRED_MIN_HEIGHT - height
-        height > PREFERRED_MAX_HEIGHT -> height - PREFERRED_MAX_HEIGHT
-        else -> 0
-    }
-
     /**
-     * Pista para el fondo: la de **menor calidad útil**. Dentro de 360p–480p gana la más baja; si no hay
-     * ninguna en el rango, la más cercana a él sin pasar de 720p. A igualdad: mejor códec y menor bitrate.
-     * Por encima de 720p no se elige nada (no compensa el gasto de datos para un fondo). O(f) con f formatos.
+     * Selección O(n), espacio O(1): 1080p, después 720p; nunca SD si existe HD.
+     * A igual altura prefiere AVC/MP4; por encima de 1080p elige la menor resolución disponible.
      */
-    fun pickBackground(candidates: List<VideoCandidate>): VideoCandidate? = candidates
-        .filter { it.height in 1..MAX_HEIGHT }
-        .minWithOrNull(
-            compareBy<VideoCandidate> { distanceToPreferred(it.height) }
-                .thenBy { it.height }
-                .thenBy { codecRank(it.mimeType) }
-                .thenBy { it.bitrate },
-        )
+    fun pickBackground(candidates: List<VideoCandidate>): VideoCandidate? = candidates.asSequence()
+        .filter { it.height > 0 }
+        .minWithOrNull(compareBy<VideoCandidate> {
+            when {
+                it.height == 1080 -> 0
+                it.height in 720..1079 -> 1
+                it.height > 1080 -> 2
+                else -> 3
+            }
+        }.thenBy { if (it.height > 1080) it.height else -it.height }
+            .thenBy { codecRank(it.mimeType) }.thenBy { it.bitrate })
 
-    /**
-     * Stream progresivo (con audio) para el modo "vídeo completo": el de mayor resolución hasta 720p;
-     * si todos la superan, el más pequeño. O(f).
-     */
-    fun pickMuxed(candidates: List<VideoCandidate>): VideoCandidate? {
-        val known = candidates.filter { it.height > 0 }
-        if (known.isEmpty()) return candidates.firstOrNull()
-        return known.filter { it.height <= MAX_HEIGHT }.maxWithOrNull(compareBy<VideoCandidate> { it.height }.thenBy { -codecRank(it.mimeType) })
-            ?: known.minByOrNull { it.height }
-    }
+    /** Compatibilidad con fuentes progresivas: misma selección O(n); el consumidor silencia el audio. */
+    fun pickMuxed(candidates: List<VideoCandidate>): VideoCandidate? = pickBackground(candidates)
 
     /**
      * ¿Es una "art track" (imagen fija)? InnerTube lo dice con `musicVideoType`
@@ -183,6 +171,7 @@ internal object VideoSelection {
         audioUrl: String?,
         isArtTrack: Boolean,
         durationSec: Int,
+        author: String? = null,
     ): ResolvedVideo {
         val background = pickBackground(videoOnly)
         val progressive = pickMuxed(muxed)
@@ -196,6 +185,7 @@ internal object VideoSelection {
             durationSec = durationSec,
             expiresAtMs = expiresAtMs(listOfNotNull(background?.url, progressive?.url, audioUrl)),
             source = source,
+            author = author,
         )
     }
 }

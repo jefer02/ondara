@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,8 +25,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -119,44 +116,21 @@ fun SourceBadge(source: PlaylistSource, modifier: Modifier = Modifier, size: Dp 
     }
 }
 
-/** Colores estables de un mix a partir de su id (hash → tono), para que cada portada sea distinta y determinista. */
-private fun mixColors(id: String, accent: Color): List<Color> {
-    val hue = ((id.hashCode() and 0x7FFFFFFF) % 360).toFloat()
-    return listOf(Color.hsv(hue, 0.62f, 0.86f), Color.hsv((hue + 48f) % 360f, 0.7f, 0.62f), accent, Color.hsv((hue + 300f) % 360f, 0.55f, 0.4f))
-}
-
-/**
- * Portada generada por Ondara para un mix: gradiente tipo *mesh* (cuatro focos radiales) con el
- * nombre en la tipografía de la marca. Se dibuja en `drawBehind`, sin bitmaps.
- */
-@Composable
-fun MixCover(id: String, title: String, modifier: Modifier = Modifier, shape: Shape = OndaraTheme.shapes.artwork) {
-    val colors = OndaraTheme.colors
-    val palette = remember(id, colors.accent) { mixColors(id, colors.accent) }
-    Box(
-        modifier
-            .clip(shape)
-            .background(palette[3])
-            .drawBehind {
-                val r = size.maxDimension * 0.85f
-                drawRect(Brush.radialGradient(listOf(palette[0], Color.Transparent), Offset(size.width * 0.12f, size.height * 0.1f), r))
-                drawRect(Brush.radialGradient(listOf(palette[1], Color.Transparent), Offset(size.width * 0.95f, size.height * 0.35f), r * 0.8f))
-                drawRect(Brush.radialGradient(listOf(palette[2].copy(alpha = 0.85f), Color.Transparent), Offset(size.width * 0.3f, size.height * 1.05f), r * 0.75f))
-            },
-    ) {
-        Column(Modifier.align(Alignment.BottomStart).padding(OndaraTheme.spacing.md)) {
-            Icon(OndaraIcons.Wave, null, tint = Color.White, size = 20.dp)
-            Text(title, style = OndaraTheme.type.title, color = Color.White, maxLines = 2)
-        }
-    }
-}
-
 /** Portada de cualquier playlist: generada si es un mix, la suya en otro caso, con insignia de origen. */
 @Composable
-fun PlaylistCover(playlist: Playlist, modifier: Modifier = Modifier, shape: Shape = OndaraTheme.shapes.artwork, sizePx: Int = 360) {
+fun PlaylistCover(
+    playlist: Playlist,
+    modifier: Modifier = Modifier,
+    shape: Shape = OndaraTheme.shapes.artwork,
+    sizePx: Int = 360,
+    showTitle: Boolean = true,
+) {
     Box(modifier) {
-        if (playlist.thumbnailUrl == null && MixIds.isVirtual(playlist.id)) {
-            MixCover(playlist.id, playlist.title, Modifier.fillMaxSize(), shape)
+        if (MixIds.isVirtual(playlist.id)) {
+            MixCover(
+                playlist.id, playlist.title, Modifier.fillMaxSize(), shape,
+                playlist.artworkUrls.ifEmpty { listOfNotNull(playlist.thumbnailUrl) }, showTitle,
+            )
         } else {
             Artwork(playlist.thumbnailUrl, Modifier.fillMaxSize(), shape = shape, sizePx = sizePx)
         }
@@ -173,14 +147,11 @@ fun TopPickCard(pick: TopPick, onClick: () -> Unit, modifier: Modifier = Modifie
     val colors = OndaraTheme.colors
     val item = pick.item
     val playlist = (item as? MusicItem.PlaylistItem)?.playlist
-    val image = item.imageUrl()
-    val generated = playlist != null && image == null && MixIds.isVirtual(playlist.id)
+    val image = playlist?.artworkUrls?.firstOrNull() ?: item.imageUrl()
     val palette = rememberArtworkPalette(image)
-    val accent = colors.accent
     val base = when {
-        OndaraTheme.spec.ditherArtwork -> colors.blockPrimary
-        palette != null -> palette.dominant
-        generated -> remember(playlist!!.id, accent) { mixColors(playlist.id, accent)[1] }
+        OndaraTheme.spec.ditherArtwork -> colors.surface
+        palette != null -> lerp(palette.muted, colors.background, 0.65f)
         else -> colors.surfaceHigh
     }
     val onBase = remember(base) { Color(ColorMath.onColor(base.toArgb())) }
@@ -193,7 +164,7 @@ fun TopPickCard(pick: TopPick, onClick: () -> Unit, modifier: Modifier = Modifie
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             if (playlist != null) {
-                PlaylistCover(playlist, Modifier.fillMaxSize(), shape = RectangleShape, sizePx = 720)
+                PlaylistCover(playlist, Modifier.fillMaxSize(), shape = RectangleShape, sizePx = 720, showTitle = false)
             } else {
                 Artwork(image, Modifier.fillMaxSize(), shape = RectangleShape, sizePx = 720)
             }
@@ -201,7 +172,7 @@ fun TopPickCard(pick: TopPick, onClick: () -> Unit, modifier: Modifier = Modifie
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(56.dp).background(Brush.verticalGradient(listOf(Color.Transparent, base))))
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = OndaraTheme.spacing.lg).padding(top = OndaraTheme.spacing.xs, bottom = OndaraTheme.spacing.lg)) {
-            Label(pick.label, color = onBase.copy(alpha = 0.78f))
+            Label(app.ondara.core.model.distinctPickLabel(pick.label, item.titleText()), color = onBase)
             Spacer(Modifier.height(OndaraTheme.spacing.xxs))
             Text(item.titleText(), style = OndaraTheme.type.title, color = onBase, maxLines = 2)
         }
@@ -237,7 +208,7 @@ fun <T : Any> Carousel(
     Column(modifier.padding(bottom = OndaraTheme.spacing.xl)) {
         app.ondara.core.designsystem.component.SectionTitle(title, action = action, onAction = onAction)
         LazyRow(contentPadding = PaddingValues(horizontal = OndaraTheme.spacing.screen), horizontalArrangement = Arrangement.spacedBy(spacing)) {
-            items(items, key = key) { card(it) }
+            items(items, key = key, contentType = { "card" }) { card(it) }
         }
     }
 }

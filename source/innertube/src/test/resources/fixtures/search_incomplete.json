@@ -1,0 +1,34 @@
+{
+  "contents": [
+    {
+      "musicResponsiveListItemRenderer": {
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Sin identificador"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "playlistItemData": {
+          "videoId": "sin-titulo"
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "flexColumns": null,
+        "fixedColumns": {}
+      }
+    }
+  ]
+}

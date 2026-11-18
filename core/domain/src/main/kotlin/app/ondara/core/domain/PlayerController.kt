@@ -2,7 +2,6 @@ package app.ondara.core.domain
 
 import app.ondara.core.model.EqualizerBand
 import app.ondara.core.model.PlaybackContext
-import app.ondara.core.model.VideoBackgroundState
 import app.ondara.core.model.PlayerState
 import app.ondara.core.model.Song
 import kotlinx.coroutines.flow.Flow
@@ -47,26 +46,4 @@ interface PlayerController {
     fun setSleepTimer(minutes: Int?)
 
     fun equalizerBands(): List<EqualizerBand>
-}
-
-/**
- * Vídeo de fondo del layout "Cine": un segundo reproductor, mudo, que sigue al de audio.
- *
- * La implementa `:playback`. La interfaz es Kotlin puro, por eso [setSurface] recibe `Any?`:
- * en Android es un `android.view.Surface`.
- */
-interface VideoBackgroundController {
-    val state: StateFlow<VideoBackgroundState>
-
-    /** El reproductor "Cine" está en pantalla: crea el reproductor de vídeo y empieza a seguir al audio. Idempotente. */
-    fun start()
-
-    /** El reproductor se cerró: libera el reproductor de vídeo. Idempotente. */
-    fun stop()
-
-    /** Superficie donde pintar (`android.view.Surface`), o `null` al destruirse. */
-    fun setSurface(surface: Any?)
-
-    /** Entra o sale del modo "vídeo completo" (vídeo con su propio audio). */
-    fun setVideoMode(enabled: Boolean)
 }
