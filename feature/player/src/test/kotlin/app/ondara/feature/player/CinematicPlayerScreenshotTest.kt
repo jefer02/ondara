@@ -65,7 +65,7 @@ class CinematicPlayerScreenshotTest(private val themeId: String, private val lay
                         val shared = this
                         androidx.compose.animation.AnimatedVisibility(visible = true) {
                             FullPlayer(state, events::add, position, {}, {},
-                                LyricsSlots(full = {}, currentLine = {}, preview = {}), shared, this, androidx.compose.ui.Modifier, active = true)
+                                LyricsSlots(full = { _, _ -> }, currentLine = {}, preview = {}), shared, this, androidx.compose.ui.Modifier, active = true)
                         }
                     }
                 }

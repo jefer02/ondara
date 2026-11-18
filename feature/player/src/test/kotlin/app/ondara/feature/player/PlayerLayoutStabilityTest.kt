@@ -88,7 +88,11 @@ class PlayerLayoutStabilityTest {
                             ),
                             events::add, position, {}, {},
                             LyricsSlots(
-                                full = { BasicText("Letra completa", it) },
+                                full = { modifier, close ->
+                                    app.ondara.core.designsystem.component.OndaraIconButton(
+                                        app.ondara.core.designsystem.icon.OndaraIcons.ChevronDown, "Cerrar letra", close, modifier,
+                                    )
+                                },
                                 currentLine = { BasicText(line, it.fillMaxSize()) }, preview = {},
                             ), shared, this, Modifier, active = true,
                         )

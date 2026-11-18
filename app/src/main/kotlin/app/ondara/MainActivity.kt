@@ -385,7 +385,7 @@ private fun AppScaffold(theme: ThemeSpec, state: AppUiState, viewModel: AppViewM
                     onNavigate = onNavigate,
                     lyrics = remember {
                         LyricsSlots(
-                            full = { modifier -> LyricsView(modifier) },
+                            full = { modifier, close -> LyricsView(modifier, onClose = close) },
                             currentLine = { modifier -> CurrentLyricLine(modifier) },
                             preview = { modifier -> LyricsPreview(modifier) },
                         )

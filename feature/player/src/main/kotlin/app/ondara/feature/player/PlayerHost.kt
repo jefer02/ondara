@@ -74,7 +74,7 @@ val MiniPlayerHeight = 56.dp
 
 /** Ranuras de letra que inyecta :app desde :feature:lyrics. */
 class LyricsSlots(
-    val full: @Composable (Modifier) -> Unit,
+    val full: @Composable (Modifier, () -> Unit) -> Unit,
     val currentLine: @Composable (Modifier) -> Unit,
     val preview: @Composable (Modifier) -> Unit,
 )
