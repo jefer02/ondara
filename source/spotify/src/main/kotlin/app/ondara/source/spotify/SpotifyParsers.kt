@@ -7,6 +7,7 @@ import app.ondara.core.network.int
 import app.ondara.core.network.long
 import app.ondara.core.network.path
 import app.ondara.core.network.string
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
@@ -102,28 +103,34 @@ internal object PathfinderParsers {
 
     fun playlistTracks(json: JsonElement): PathfinderPage<SpotifyTrack> {
         val content = json.path("data", "playlistV2", "content")
-        val entries = content["items"].array
-        return PathfinderPage(entries.mapNotNull { track(it["itemV2"]) }, entries.size, content["totalCount"].int ?: 0)
+        val entries = pageEntries(content)
+        return PathfinderPage(entries.mapNotNull { track(it["itemV2"]) }, entries.size, pageTotal(content))
     }
 
     fun savedTracks(json: JsonElement): PathfinderPage<SpotifyTrack> {
         val tracks = json.path("data", "me", "library", "tracks")
-        val entries = tracks["items"].array
-        return PathfinderPage(entries.mapNotNull { track(it["track"]) }, entries.size, tracks["totalCount"].int ?: 0)
+        val entries = pageEntries(tracks)
+        return PathfinderPage(entries.mapNotNull { track(it["track"]) }, entries.size, pageTotal(tracks))
     }
 
     /** Elementos de `libraryV3` cuyo envoltorio es de tipo [typename] (descarta carpetas, "Tus me gusta", etc.). */
     private fun <T> libraryPage(json: JsonElement, typename: String, build: (uri: String, data: JsonElement?) -> T): PathfinderPage<T> {
         val library = json.path("data", "me", "libraryV3")
-        val entries = library["items"].array
+        val entries = pageEntries(library)
         val items = entries.mapNotNull { entry ->
             val wrapper = entry["item"]
             val data = wrapper["data"]
             val uri = wrapper["_uri"].string ?: data["uri"].string
             if (wrapper["__typename"].string == typename && uri != null) build(uri, data) else null
         }
-        return PathfinderPage(items, entries.size, library["totalCount"].int ?: 0)
+        return PathfinderPage(items, entries.size, pageTotal(library))
     }
+
+    private fun pageEntries(page: JsonElement?): JsonArray =
+        page["items"] as? JsonArray ?: throw SpotifyApiException(200, PathfinderLibrary.MsgApiChanged)
+
+    private fun pageTotal(page: JsonElement?): Int =
+        page["totalCount"].int?.takeIf { it >= 0 } ?: throw SpotifyApiException(200, PathfinderLibrary.MsgApiChanged)
 
     /** Solo acepta URIs `spotify:track:`: así quedan fuera los archivos locales, los episodios y los huecos. */
     private fun track(wrapper: JsonElement?): SpotifyTrack? {

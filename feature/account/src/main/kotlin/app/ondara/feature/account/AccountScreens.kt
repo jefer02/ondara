@@ -72,8 +72,8 @@ fun AccountSheetContent(
         Row { Icon(OndaraIcons.Spotify, null); Text("Spotify") }
         Text(state.accounts.spotify?.let { "Conectado como ${it.name}" } ?: "Sin conectar")
         OndaraButton(
-            if (state.accounts.spotify == null) "Conectar" else "Desconectar",
-            { event(if (state.accounts.spotify == null) AccountEvent.Navigate(Nav.SpotifyConnect) else AccountEvent.Disconnect) },
+            "Importar desde Spotify",
+            { event(AccountEvent.Navigate(Nav.SpotifyConnect)) },
             style = ButtonStyle.TONAL, enabled = !state.busy,
         )
         ImportProgress(state.progress)
@@ -105,7 +105,7 @@ internal fun ImportProgress(progress: SyncProgress) {
     val fraction = animateFloatAsState(progress.fraction.coerceIn(0f, 1f), motion.spring(), label = "Importación")
     val colors = OndaraTheme.colors
     if (progress.running) {
-        Text("Importando ${progress.done} de ${progress.total} canciones…", style = OndaraTheme.type.caption)
+        Text(progress.message.ifBlank { "Importando…" }, style = OndaraTheme.type.caption)
         Canvas(
             Modifier.fillMaxWidth().height(OndaraTheme.spacing.sm).semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(progress.fraction.coerceIn(0f, 1f), 0f..1f)
@@ -145,7 +145,7 @@ fun SpotifyConnectScreen(
                 if (state.accounts.spotify != null) {
                     Text("Conectado como ${state.accounts.spotify?.name}", style = OndaraTheme.type.title)
                     ImportProgress(state.progress)
-                    OndaraButton("Sincronizar ahora", { event(AccountEvent.Sync) }, enabled = !state.progress.running)
+                    OndaraButton("Importar biblioteca", { event(AccountEvent.Sync) }, enabled = !state.progress.running)
                     OndaraButton("Sin coincidencia (${state.unmatched})", { event(AccountEvent.Navigate(Nav.Unmatched)) })
                     OndaraButton("Desconectar", { event(AccountEvent.Disconnect) }, enabled = !state.busy)
                     OndaraButton("Volver", { event(AccountEvent.Navigate(Nav.Back)) }, style = ButtonStyle.GHOST)

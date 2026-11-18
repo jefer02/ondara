@@ -330,3 +330,8 @@ Otros pendientes: PoToken propio como estrategia adicional, descarga por rangos 
 57. **Navegación**. La selección usa la jerarquía de destinos tipados. Las pantallas de Cuenta se abren encima
     de la pestaña y el historial ordinario las devuelve a ella. Cambiar de pestaña descarta el tramo anterior
     sobre Inicio. Tocar Inicio hace pop a su entrada raíz y dispara el desplazamiento al comienzo.
+
+58. **Importación de Spotify**. La paginación experimental avanza por el número de entradas recibidas
+    antes de filtrar. Una respuesta incompleta se trata como error. Si falla una lista o «Me gusta»,
+    se conserva la copia local y se importan las demás colecciones. Para canciones difíciles se prueba
+    una segunda búsqueda con el título normalizado y se mantiene el umbral de aceptación.

@@ -52,6 +52,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
@@ -195,38 +196,58 @@ class SyncRepositoryImpl @Inject constructor(
         val sources = ArrayList<Triple<String, PlaylistEntity, List<SpotifyTrack>>>()
         val now = System.currentTimeMillis()
         val existing = library.playlistsBySource(PlaylistSource.SPOTIFY.name).associateBy { it.id }
-        runCatching { spotify.savedTracks() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { tracks ->
-            sources += Triple(SP_LIKED, PlaylistEntity(SP_LIKED, "Me gusta de Spotify", existing[SP_LIKED]?.createdAt ?: now, PlaylistSource.SPOTIFY.name, "liked", tracks.first().imageUrl, null), tracks)
+        val errors = ArrayList<String>()
+        val keep = playlists.mapTo(HashSet()) { SP_PREFIX + it.id }
+        val liked = readSpotify("Me gusta", errors) { spotify.savedTracks() }
+        if (liked == null || liked.isNotEmpty()) keep += SP_LIKED
+        if (!liked.isNullOrEmpty()) {
+            val entity = PlaylistEntity(SP_LIKED, "Me gusta de Spotify", existing[SP_LIKED]?.createdAt ?: now,
+                PlaylistSource.SPOTIFY.name, "liked", liked.first().imageUrl, null)
+            sources += Triple(SP_LIKED, entity, liked)
         }
-        for (playlist in playlists) {
-            val tracks = runCatching { spotify.playlistTracks(playlist.id) }.getOrNull() ?: continue
+        playlists.forEachIndexed { index, playlist ->
+            _progress.value = SyncProgress(true, "Leyendo playlist de Spotify: ${playlist.name}", index, playlists.size)
+            val tracks = readSpotify(playlist.name, errors) { spotify.playlistTracks(playlist.id) } ?: return@forEachIndexed
             val id = SP_PREFIX + playlist.id
-            sources += Triple(id, PlaylistEntity(id, playlist.name, existing[id]?.createdAt ?: now, PlaylistSource.SPOTIFY.name, playlist.id, playlist.imageUrl, playlist.owner), tracks)
+            val entity = PlaylistEntity(id, playlist.name, existing[id]?.createdAt ?: now,
+                PlaylistSource.SPOTIFY.name, playlist.id, playlist.imageUrl, playlist.owner)
+            sources += Triple(id, entity, tracks)
         }
         val unique = LinkedHashMap<String, SpotifyTrack>()
         sources.forEach { (_, _, tracks) -> tracks.forEach { unique.putIfAbsent(it.id, it) } }
-        matchAll(unique.values.toList())
+        val searchFailures = matchAll(unique.values.toList())
+        if (searchFailures > 0) errors += "Quedaron $searchFailures canciones por buscar. Vuelve a importar para reintentarlo."
         for ((id, entity, tracks) in sources) {
             library.upsertPlaylist(entity)
             matches.clearTracks(id)
             matches.putTracks(tracks.distinctBy { it.id }.mapIndexed { i, t -> SpotifyPlaylistTrackEntity(id, t.id, i) })
             materialize(id)
         }
-        val keep = sources.mapTo(HashSet()) { it.first }
         existing.keys.filter { it !in keep }.forEach { library.deletePlaylist(it); matches.clearTracks(it) }
-        runCatching { importAlbums() }.onFailure(::rethrowIfCancelled)
+        readSpotify("Álbumes", errors) { importAlbums() }
+        if (errors.isNotEmpty()) {
+            val more = (errors.size - 3).takeIf { it > 0 }?.let { " · y $it más" }.orEmpty()
+            throw IOException("Importación parcial. ${errors.take(3).joinToString(" · ")}$more")
+        }
         settings.update { it.copy(lastSpotifySyncMs = System.currentTimeMillis()) }
     }
+
+    private suspend fun <T> readSpotify(label: String, errors: MutableList<String>, read: suspend () -> T): T? =
+        runCatching { read() }.onFailure {
+            rethrowIfCancelled(it)
+            errors += "$label: ${it.message ?: "no se pudo leer"}"
+        }.getOrNull()
 
     /**
      * Empareja las canciones que aún no están en la tabla `spotify_matches`.
      * Lookup por lotes de 500 ids (límite de variables de SQLite); búsquedas limitadas a 4 simultáneas.
      */
-    private suspend fun matchAll(tracks: List<SpotifyTrack>) {
+    private suspend fun matchAll(tracks: List<SpotifyTrack>): Int {
         val known = HashSet<String>()
         tracks.map { it.id }.chunked(SQL_BATCH).forEach { ids -> matches.matches(ids).mapTo(known) { it.spotifyId } }
         val total = tracks.size
         val done = AtomicInteger(known.size.coerceAtMost(total))
+        val failures = AtomicInteger()
         fun report() {
             _progress.value = SyncProgress(true, "Importando ${done.get()} de $total canciones…", done.get(), total)
         }
@@ -236,10 +257,10 @@ class SyncRepositoryImpl @Inject constructor(
             tracks.filter { it.id !in known }.map { track ->
                 async {
                     gate.withPermit {
-                        val candidates = runCatching { searchSongs(TrackMatcher.query(track)) }.getOrNull()
+                        val result = runCatching { bestSpotifyMatch(track) }.onFailure(::rethrowIfCancelled)
                         // Un fallo de red no se guarda: la canción se reintentará en la próxima sincronización.
-                        if (candidates != null) {
-                            val best = TrackMatcher.best(track, candidates)
+                        if (result.isSuccess) {
+                            val best = result.getOrNull()
                             val accepted = best?.takeIf { it.score >= TrackMatcher.ACCEPT_SCORE }
                             accepted?.let { library.upsertSongs(listOf(it.song.toEntity())) }
                             matches.putMatch(
@@ -248,6 +269,8 @@ class SyncRepositoryImpl @Inject constructor(
                                     best?.score ?: 0.0, System.currentTimeMillis(),
                                 ),
                             )
+                        } else {
+                            failures.incrementAndGet()
                         }
                         done.incrementAndGet()
                         report()
@@ -255,6 +278,17 @@ class SyncRepositoryImpl @Inject constructor(
                 }
             }.awaitAll()
         }
+        return failures.get()
+    }
+
+    private suspend fun bestSpotifyMatch(track: SpotifyTrack): TrackMatcher.Match? {
+        val query = TrackMatcher.query(track)
+        val first = TrackMatcher.best(track, searchSongs(query))
+        if ((first?.score ?: 0.0) >= TrackMatcher.ACCEPT_SCORE) return first
+        val fallback = listOfNotNull(TrackMatcher.normalize(track.title), track.artists.firstOrNull()).joinToString(" ").trim()
+        if (fallback.isBlank() || fallback.equals(query, ignoreCase = true)) return first
+        val alternative = TrackMatcher.best(track, searchSongs(fallback))
+        return if ((alternative?.score ?: 0.0) > (first?.score ?: 0.0)) alternative else first
     }
 
     private suspend fun searchSongs(query: String): List<Song> =
