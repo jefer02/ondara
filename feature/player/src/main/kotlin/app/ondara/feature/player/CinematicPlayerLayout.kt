@@ -61,45 +61,42 @@ internal fun CinematicPlayerLayout(
             ))))
             SeekWaves(wave)
         }
-        Column(Modifier.fillMaxSize()
-            .statusBarsPadding().navigationBarsPadding().padding(horizontal = spacing.screen)) {
-            Row(Modifier.fillMaxWidth().then(dragModifier), verticalAlignment = Alignment.CenterVertically) {
-                OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse, tint = Color.White)
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
-                        style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
-                    PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
+        PlayerDetails(song, lyrics, { panel = "Letra" }, onNavigate) {
+            Column(Modifier.fillMaxSize()
+                .statusBarsPadding().navigationBarsPadding().padding(horizontal = spacing.screen)) {
+                Row(Modifier.fillMaxWidth().then(dragModifier), verticalAlignment = Alignment.CenterVertically) {
+                    OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse, tint = Color.White)
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
+                            style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
+                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
+                    }
+                    OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
                 }
-                OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
-            }
-            Spacer(Modifier.weight(1f).fillMaxWidth().then(dragModifier))
-            CinematicLyricBox(lyrics.currentLine)
-            Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
-                Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
+                Spacer(Modifier.weight(1f).fillMaxWidth())
+                CinematicLyricBox(lyrics.currentLine)
+                Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                    Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
+                    with(sharedScope) {
+                        PlayerMetadata(song, Modifier.weight(1f).padding(horizontal = spacing.md)
+                            .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope), Color.White)
+                    }
+                    OndaraIconButton(OndaraIcons.Close, "No me interesa", { onEvent(PlayerEvent.NotInterested) }, tint = Color.White)
+                    OndaraIconButton(if (added) OndaraIcons.Check else OndaraIcons.Add,
+                        "Agregar a playlist", { panel = "Playlist" }, tint = Color.White)
+                }
+                Progress(state.player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, light = true)
                 with(sharedScope) {
-                    PlayerMetadata(song, Modifier.weight(1f).padding(horizontal = spacing.md)
-                        .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope), Color.White)
+                    PlayerTransport(state.player, onEvent,
+                        Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
                 }
-                OndaraIconButton(OndaraIcons.Close, "No me interesa", { onEvent(PlayerEvent.NotInterested) }, tint = Color.White)
-                OndaraIconButton(if (added) OndaraIcons.Check else OndaraIcons.Add,
-                    "Agregar a playlist", { panel = "Playlist" }, tint = Color.White)
+                PlayerScrollHint(Color.White)
+                PlayerBottomActions(song, { panel = it }, Color.White)
+                Spacer(Modifier.height(spacing.lg))
             }
-            Progress(state.player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, light = true)
-            with(sharedScope) {
-                PlayerTransport(state.player, onEvent,
-                    Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
-            }
-            PlayerBottomActions(song, { panel = it }, Color.White)
-            LyricsHandle({ panel = "Letra" }, artworkUrl = song.thumbnailUrl)
-            Spacer(Modifier.height(spacing.lg))
         }
         if (panel == "Cola") QueuePanel(state.player, onEvent) { panel = "" }
-        if (panel == "Letra") {
-            Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .8f)).statusBarsPadding().navigationBarsPadding()) {
-                OndaraIconButton(OndaraIcons.Close, "Cerrar letra", { panel = "" }, tint = Color.White)
-                lyrics.full(Modifier.fillMaxWidth().weight(1f))
-            }
-        }
+        if (panel == "Letra") PlayerLyricsOverlay(lyrics) { panel = "" }
     }
     if (panel == "Temporizador") PlayerTimer(state.player, onEvent) { panel = "" }
     if (panel == "Menú") SongMenuSheet(song, { panel = "" }, { onNavigate(Nav.Artist(it)) }, { onNavigate(Nav.Album(it)) })

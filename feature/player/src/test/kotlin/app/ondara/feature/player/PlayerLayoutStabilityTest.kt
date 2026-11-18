@@ -11,9 +11,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.hasText
@@ -107,8 +109,10 @@ class PlayerLayoutStabilityTest {
                 assertEquals(originalY, play.getBoundsInRoot().top)
             }
         }
-        compose.onNodeWithContentDescription("Abrir letra").performTouchInput { swipeUp() }
+        compose.onNodeWithText("Vista previa de la letra").assertIsNotDisplayed()
+        compose.onNode(hasScrollAction()).performTouchInput { swipeUp() }
         compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Ver letra completa").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Cerrar letra").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(events.contains(PlayerEvent.CanvasActive(true))) }
         for (chosen in PlayerLayout.entries.filter { it != PlayerLayout.CINEMATIC }) {

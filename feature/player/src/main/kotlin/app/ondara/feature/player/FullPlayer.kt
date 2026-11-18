@@ -1,7 +1,6 @@
 package app.ondara.feature.player
 
 import android.os.Build
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -11,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +105,6 @@ internal fun FullPlayer(
     }
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
-    val motion = OndaraTheme.motion
     var showLyrics by rememberSaveable(layout) { mutableStateOf(false) }
     var showQueue by rememberSaveable(layout) { mutableStateOf(false) }
     var showTimer by remember(layout) { mutableStateOf(false) }
@@ -119,73 +116,62 @@ internal fun FullPlayer(
     }
     Box(Modifier.fillMaxSize().background(colors.background).grain(OndaraTheme.spec.grain)) {
         PlayerBackdrop(layout, song)
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            // Barra superior (también es la zona de arrastre para colapsar).
-            Row(Modifier.fillMaxWidth().then(dragModifier).padding(horizontal = spacing.sm, vertical = spacing.xs),
-                verticalAlignment = Alignment.CenterVertically) {
-                OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse)
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Label("Reproduciendo")
-                    song.album?.let { Text(it.title, style = OndaraTheme.type.caption, maxLines = 1) }
+        PlayerDetails(song, lyrics, { showLyrics = true }, onNavigate) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                // Barra superior (también es la zona de arrastre para colapsar).
+                Row(Modifier.fillMaxWidth().then(dragModifier).padding(horizontal = spacing.sm, vertical = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse)
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Label("Reproduciendo")
+                        song.album?.let { Text(it.title, style = OndaraTheme.type.caption, maxLines = 1) }
+                    }
+                    OndaraIconButton(OndaraIcons.More, "Más opciones", { showMenu = true })
                 }
-                OndaraIconButton(OndaraIcons.More, "Más opciones", { showMenu = true })
-            }
 
-            // Zona central: portada según el layout del tema, o la letra.
-            AnimatedContent(
-                showLyrics,
-                Modifier.weight(1f).fillMaxWidth(),
-                transitionSpec = { fadeIn(motion.fade()) togetherWith fadeOut(motion.fade()) },
-                label = "playerCenter",
-            ) { lyricsMode ->
-                if (lyricsMode) {
-                    lyrics.full(Modifier.fillMaxSize())
-                } else {
-                    Box(Modifier.fillMaxSize().then(dragModifier), contentAlignment = Alignment.Center) {
-                        with(sharedScope) {
-                            val shared = Modifier.sharedElement(rememberSharedContentState(KEY_ARTWORK), visibilityScope)
-                            when (layout) {
-                                PlayerLayout.ARTWORK_HERO -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 28)
-                                PlayerLayout.IMMERSIVE -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 20)
-                                PlayerLayout.VINYL -> VinylArtwork(song, player.isPlaying, shared)
-                                PlayerLayout.CINEMATIC, PlayerLayout.BENTO -> Unit
-                                PlayerLayout.MINIMAL -> MinimalArtwork(song, positionFlow, player, shared)
-                            }
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    with(sharedScope) {
+                        val shared = Modifier.sharedElement(rememberSharedContentState(KEY_ARTWORK), visibilityScope)
+                        when (layout) {
+                            PlayerLayout.ARTWORK_HERO -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 28)
+                            PlayerLayout.IMMERSIVE -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 20)
+                            PlayerLayout.VINYL -> VinylArtwork(song, player.isPlaying, shared)
+                            PlayerLayout.CINEMATIC, PlayerLayout.BENTO -> Unit
+                            PlayerLayout.MINIMAL -> MinimalArtwork(song, positionFlow, player, shared)
                         }
                     }
                 }
-            }
 
-            // Título + favorito.
-            Row(Modifier.fillMaxWidth().padding(horizontal = spacing.xxl), verticalAlignment = Alignment.CenterVertically) {
+                // Título + favorito.
+                Row(Modifier.fillMaxWidth().padding(horizontal = spacing.xxl), verticalAlignment = Alignment.CenterVertically) {
+                    with(sharedScope) {
+                        PlayerMetadata(song, Modifier.weight(1f)
+                            .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope))
+                    }
+                    OndaraIconButton(
+                        if (state.favorite) OndaraIcons.HeartFilled else OndaraIcons.Heart,
+                        if (state.favorite) "Quitar de favoritos" else "Añadir a favoritos",
+                        { onEvent(PlayerEvent.ToggleFavorite) },
+                        tint = if (state.favorite) colors.accent else colors.onBackground,
+                        haptic = true,
+                    )
+                }
+
+                Progress(player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, Modifier.padding(horizontal = spacing.xxl))
+
                 with(sharedScope) {
-                    PlayerMetadata(song, Modifier.weight(1f)
-                        .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope))
+                    PlayerTransport(player, onEvent, Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope))
                 }
-                OndaraIconButton(
-                    if (state.favorite) OndaraIcons.HeartFilled else OndaraIcons.Heart,
-                    if (state.favorite) "Quitar de favoritos" else "Añadir a favoritos",
-                    { onEvent(PlayerEvent.ToggleFavorite) },
-                    tint = if (state.favorite) colors.accent else colors.onBackground,
-                    haptic = true,
-                )
+                PlayerScrollHint(colors.onMuted)
+                PlayerBottomActions(song, { panel ->
+                    when (panel) {
+                        "Cola" -> showQueue = true
+                        "Temporizador" -> showTimer = true
+                    }
+                })
+                Spacer(Modifier.height(spacing.lg))
             }
-
-            Progress(player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, Modifier.padding(horizontal = spacing.xxl))
-
-            with(sharedScope) {
-                PlayerTransport(player, onEvent, Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope))
-            }
-            PlayerBottomActions(song, { panel ->
-                when (panel) {
-                    "Cola" -> showQueue = true
-                    "Temporizador" -> showTimer = true
-                }
-            })
-            LyricsHandle({ showLyrics = !showLyrics }, Modifier.padding(horizontal = spacing.screen), song.thumbnailUrl)
-            Spacer(Modifier.height(spacing.lg))
         }
-
         AnimatedVisibility(
             showQueue,
             enter = slideInVertically(OndaraTheme.motion.spring()) { it } + fadeIn(),
@@ -193,6 +179,7 @@ internal fun FullPlayer(
         ) {
             QueuePanel(player, onEvent) { showQueue = false }
         }
+        if (showLyrics) PlayerLyricsOverlay(lyrics) { showLyrics = false }
     }
 
     if (showTimer) {
