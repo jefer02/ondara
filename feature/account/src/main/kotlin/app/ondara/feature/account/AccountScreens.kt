@@ -1,10 +1,6 @@
 package app.ondara.feature.account
 
 import android.net.Uri
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -13,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
@@ -23,7 +18,6 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.Icon
@@ -140,7 +134,10 @@ fun SpotifyConnectScreen(
     }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
     if (state.spotifyWebLogin && state.accounts.spotify == null) {
-        SpotifyWebLogin(state.busy, event, modifier)
+        SpotifyWebLogin(state.busy, event, modifier, onAlternative = {
+            event(AccountEvent.CloseSpotifyLogin)
+            showAdvanced = true
+        })
         return
     }
 
@@ -177,57 +174,4 @@ private fun SpotifyClientIdSettings(state: AccountUiState, event: (AccountEvent)
     OndaraButton("Abrir Spotify for Developers", { event(AccountEvent.Developers) }, style = ButtonStyle.GHOST)
     OndaraTextField(state.settings.spotifyClientId, { event(AccountEvent.ClientId(it)) }, placeholder = "Client ID")
     OndaraButton("Conectar con Client ID", { event(AccountEvent.Authorize) }, enabled = !state.busy)
-}
-
-@Composable
-private fun SpotifyWebLogin(connecting: Boolean, event: (AccountEvent) -> Unit, modifier: Modifier = Modifier) {
-    val latestEvent by rememberUpdatedState(event)
-    var spotifyWebPlayer by remember { mutableStateOf(false) }
-    val close = { event(AccountEvent.CloseSpotifyLogin) }
-    BackHandler(enabled = !connecting, onBack = close)
-    LaunchedEffect(spotifyWebPlayer) {
-        while (spotifyWebPlayer) {
-            val cookie = CookieManager.getInstance().getCookie("https://open.spotify.com").orEmpty()
-                .split(';').map { it.trim() }.firstOrNull { it.startsWith("sp_dc=") }?.substringAfter('=')
-            if (!cookie.isNullOrBlank()) {
-                latestEvent(AccountEvent.Cookie(cookie))
-                break
-            }
-            kotlinx.coroutines.delay(1000)
-        }
-    }
-    Column(modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = OndaraTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            OndaraIconButton(OndaraIcons.Back, "Volver", close, enabled = !connecting)
-            Text(if (connecting) "Conectando con Spotify…" else "Iniciar sesión en Spotify", style = OndaraTheme.type.title)
-        }
-        AndroidView(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            factory = { context ->
-                WebView(context).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    CookieManager.getInstance().setAcceptCookie(true)
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView, url: String) {
-                            val page = Uri.parse(url)
-                            spotifyWebPlayer = page.scheme == "https" && page.host == "open.spotify.com"
-                        }
-
-                        override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
-                            if (request?.isForMainFrame == true) {
-                                latestEvent(AccountEvent.CloseSpotifyLogin)
-                                latestEvent(AccountEvent.Error("No se pudo cargar Spotify: ${error?.description}"))
-                            }
-                        }
-                    }
-                    loadUrl("https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
-                }
-            },
-            onRelease = { view ->
-                view.stopLoading()
-                view.destroy()
-            },
-        )
-    }
 }
