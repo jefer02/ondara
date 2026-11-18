@@ -5,6 +5,7 @@ import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.NavStyle
 import app.ondara.core.designsystem.theme.PlayerLayout
 import app.ondara.core.designsystem.theme.ThemeJson
+import app.ondara.core.model.UserSettings
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -38,5 +39,14 @@ class ThemeEditorTest {
         assertEquals(NavStyle.BOTTOM_BAR, theme.navigation)
         assertEquals(BackgroundStyle.BLURRED_ART, theme.background)
         assertEquals(theme, ThemeJson.decode(ThemeJson.encode(theme)))
+    }
+
+    @Test
+    fun `cambiar el layout en el editor lo aplica y si no se respeta el del usuario`() {
+        val fresh = UserSettings()
+        assertEquals(UserSettings.PLAYER_LAYOUT_THEME, settingsAfterThemeSave(fresh, "custom-a", applyPlayerLayout = true).playerLayout)
+        val kept = settingsAfterThemeSave(fresh.copy(playerLayout = "VINYL"), "custom-b", applyPlayerLayout = false)
+        assertEquals("VINYL", kept.playerLayout)
+        assertEquals("custom-b", kept.themeId)
     }
 }

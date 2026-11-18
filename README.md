@@ -99,6 +99,13 @@ Cuenta → Spotify:
 Las credenciales se cifran con Android Keystore (AES-256-GCM). La biblioteca se resincroniza cada 12 h
 con WorkManager o a mano desde la hoja de Cuenta.
 
+## Autor
+
+Ondara la creó **Jeferson Manuel Morillo Vallejo**.
+
+- GitHub: [github.com/jefer02](https://github.com/jefer02)
+- Instagram: [@morillo9725](https://www.instagram.com/morillo9725)
+
 ## Licencia
 
 [GPL-3.0](LICENSE).
@@ -131,3 +138,8 @@ indicada por `ONDARA_SIGNING_PROPERTIES`, con `storeFile`, `storePassword`, `key
 Guarda una copia privada de la clave y su contraseña; no las añadas al repositorio.
 Una instalación antigua de `app.ondara` firmada con otra clave no puede actualizarse con esta firma:
 es necesario desinstalarla primero (se pierden sus datos locales). La edición `.debug` puede coexistir.
+
+## Créditos de terceros
+
+Los proveedores Apple Music/Tidal y el fondo Canvas adaptan ideas y código de
+[Echo Music](https://github.com/EchoMusicApp/Echo-Music), bajo GPL-3.0.

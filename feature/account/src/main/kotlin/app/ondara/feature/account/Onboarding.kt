@@ -180,6 +180,7 @@ fun OnboardingScreen(
                 { event(if (state.step == 3) OnboardingEvent.Finish else OnboardingEvent.Next) },
                 Modifier.fillMaxWidth(), enabled = !state.saving,
             )
+            if (state.step == 3) AuthorFooter("Hecho con ♥ por ${OndaraAuthor.NAME}", onClick = null)
         }
     }
 }

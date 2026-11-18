@@ -207,10 +207,11 @@ fun PlaylistScreen(playlistId: String, onNavigate: (Nav) -> Unit, modifier: Modi
     val playlist = state.playlist
     val local = playlist?.isLocal == true && !MixIds.isVirtual(playlistId)
     val starred = if (local) state.pinned else state.saved
-    val meta = listOfNotNull(playlist?.author, "${state.songs.size} canciones",
+    val count = if (MixIds.isVirtual(playlistId)) null else "${state.songs.size} canciones"
+    val meta = listOfNotNull(playlist?.author, count,
         formatDuration(state.songs.sumOf { it.durationSec }).ifEmpty { null }).joinToString(" · ")
     val generated: (@Composable (Modifier) -> Unit)? = if (MixIds.isVirtual(playlistId) && playlist?.thumbnailUrl == null) {
-        { m -> MixCover(playlistId, playlist?.title.orEmpty(), m, RectangleShape) }
+        { m -> MixCover(playlistId, playlist?.title.orEmpty(), m, RectangleShape, playlist?.artworkUrls.orEmpty(), showTitle = false) }
     } else null
     ImmersiveDetail(
         imageUrl = playlist?.thumbnailUrl ?: state.songs.firstOrNull()?.thumbnailUrl?.takeUnless { MixIds.isVirtual(playlistId) },

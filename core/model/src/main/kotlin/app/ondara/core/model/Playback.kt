@@ -32,30 +32,33 @@ enum class RepeatMode { OFF, ALL, ONE }
 /** Origen de la cola en curso: [type] es "Playlist", "Álbum", "Radio", "Artista"… y [title] su nombre. */
 data class PlaybackContext(val type: String, val title: String)
 
-enum class VideoStatus {
-    /** Sin vídeo activo (controlador detenido). */
-    IDLE,
+@Serializable
+enum class CanvasSource { APPLE_MUSIC, SPOTIFY, TIDAL, YOUTUBE_CLIP }
 
-    /** Resolviendo o cargando el vídeo de la canción actual. */
-    LOADING,
-
-    /** Hay vídeo y ya se pintó su primer fotograma. */
-    READY,
-
-    /** La canción no tiene vídeo utilizable (o no hay Wi-Fi): la interfaz muestra la portada. */
-    UNAVAILABLE,
-}
-
-/** Estado del vídeo de fondo del layout "Cine". */
-data class VideoBackgroundState(
-    val status: VideoStatus = VideoStatus.IDLE,
-    /** Canción a la que corresponde el vídeo cargado. */
-    val songId: String? = null,
+/** Canvas resuelto de una canción: un vídeo corto que se repite en bucle. */
+@Serializable
+data class Canvas(
+    val songId: String,
+    val url: String,
+    val source: CanvasSource,
+    /** Recorte en ms dentro del vídeo; null indica que el vídeo entero ya es corto. */
+    val clipStartMs: Long = 0,
+    val clipEndMs: Long? = null,
     val width: Int = 0,
     val height: Int = 0,
-    /** `true` en modo "vídeo completo": el vídeo suena con su propio audio y el reproductor de audio queda en pausa. */
-    val videoMode: Boolean = false,
 )
+
+sealed interface CanvasState {
+    data object Idle : CanvasState
+    data class Loading(val songId: String) : CanvasState
+    data class Ready(val canvas: Canvas) : CanvasState
+
+    /** Sin canvas o no permitido: la UI muestra la portada. */
+    data class None(val songId: String?) : CanvasState
+}
+
+/** Ranura visible y superficies que ya pintaron su primer fotograma. */
+data class CanvasSurfaces(val active: Int = 0, val firstFrame: Set<Int> = emptySet(), val width: Int = 0, val height: Int = 0)
 
 /** Estado observable del reproductor, compartido por todas las pantallas. */
 data class PlayerState(

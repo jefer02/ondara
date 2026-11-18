@@ -44,7 +44,10 @@ class HomeScreenshotTest(private val themeId: String) {
             loading = false, catalogLoading = false, settings = UserSettings(profileName = "Luna"),
             historyLoaded = true, hasHistory = true, recent = songs,
             personal = PersonalHome(topPicks = listOf(TopPick("Para volver a escuchar", songs.first())),
-                mixes = listOf(Playlist(MixIds.CALM, "Calma"))),
+                mixes = listOf(Playlist(
+                    MixIds.CALM, "Calma", author = "3 canciones · Aurora", songCount = 3,
+                    artworkUrls = listOf("https://i.ytimg.com/vi/fixture/hqdefault.jpg"),
+                ))),
         )
         val spec = ThemeJson.decode(File("../../core/designsystem/src/main/assets/themes/$themeId.json").readText())
         compose.mainClock.autoAdvance = false

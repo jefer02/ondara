@@ -64,6 +64,7 @@ import app.ondara.core.designsystem.theme.PlayerLayout
 import app.ondara.core.designsystem.theme.ThemeSpec
 import app.ondara.core.designsystem.theme.ThemeStore
 import app.ondara.core.domain.SettingsRepository
+import app.ondara.core.model.UserSettings
 import app.ondara.core.ui.CollectEffects
 import app.ondara.core.ui.MenuAction
 import app.ondara.core.ui.MviViewModel
@@ -79,7 +80,12 @@ sealed interface ThemesEvent {
     data class Select(val id: String) : ThemesEvent
     data class Delete(val id: String) : ThemesEvent
     data class Import(val json: String) : ThemesEvent
-    data class Save(val spec: ThemeSpec) : ThemesEvent
+
+    /**
+     * Guarda y aplica un tema. [applyPlayerLayout] = el usuario cambió el layout del reproductor en el editor:
+     * entonces Ajustes > Reproductor pasa a "Según el tema"; si no, se respeta la elección previa (Cine por defecto).
+     */
+    data class Save(val spec: ThemeSpec, val applyPlayerLayout: Boolean = false) : ThemesEvent
 }
 
 sealed interface ThemesEffect {
@@ -119,7 +125,7 @@ class ThemesViewModel @Inject constructor(
             }
             is ThemesEvent.Save -> viewModelScope.launch {
                 val saved = store.save(event.spec)
-                settings.update { it.copy(themeId = saved.id) }
+                settings.update { settingsAfterThemeSave(it, saved.id, event.applyPlayerLayout) }
                 emit(ThemesEffect.Saved)
             }
         }
@@ -288,3 +294,11 @@ fun ThemePreview(spec: ThemeSpec, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * Ajustes tras "Guardar y aplicar" un tema. Si el usuario cambió el layout del reproductor en el editor, pasa a
+ * "Según el tema": sin esto el layout elegido nunca se veía, porque un `playerLayout` explícito ("CINEMATIC" por
+ * defecto) tiene prioridad sobre el del tema en `resolvePlayerLayout` (causa raíz del P7 de v3). O(1).
+ */
+internal fun settingsAfterThemeSave(current: UserSettings, themeId: String, applyPlayerLayout: Boolean): UserSettings =
+    current.copy(themeId = themeId, playerLayout = if (applyPlayerLayout) UserSettings.PLAYER_LAYOUT_THEME else current.playerLayout)

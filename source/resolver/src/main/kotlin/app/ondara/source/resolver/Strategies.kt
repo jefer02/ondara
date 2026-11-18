@@ -91,6 +91,7 @@ class NewPipeStrategy(private val okHttp: OkHttpClient) : StreamStrategy, VideoS
                     description = runCatching { extractor.description.content }.getOrNull(),
                 ),
                 durationSec = runCatching { extractor.length.toInt() }.getOrDefault(0),
+                author = runCatching { extractor.uploaderName }.getOrNull(),
             )
         }
     }
@@ -195,6 +196,7 @@ class InnerTubeClientStrategy(
             audioUrl = audio?.url,
             isArtTrack = VideoSelection.isArtTrack(details["musicVideoType"].string, details["author"].string, details["shortDescription"].string),
             durationSec = details["lengthSeconds"].string?.toIntOrNull() ?: details["lengthSeconds"].int ?: 0,
+            author = details["author"].string,
         )
     }
 

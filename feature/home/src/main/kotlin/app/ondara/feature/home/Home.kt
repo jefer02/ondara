@@ -1,16 +1,12 @@
 package app.ondara.feature.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -26,6 +22,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -34,7 +31,9 @@ data class HomeUiState(
     val catalogLoading: Boolean = true,
     val personal: PersonalHome = PersonalHome(),
     val shelves: List<HomeShelf> = emptyList(),
+    val catalogReleases: List<MusicItem> = emptyList(),
     val moods: List<MoodCategory> = emptyList(),
+    val moodArtwork: Map<MoodCategory, String?> = emptyMap(),
     val recent: List<MusicItem> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val connected: Boolean = false,
@@ -43,12 +42,11 @@ data class HomeUiState(
     val historyLoaded: Boolean = false,
     val error: String? = null,
 ) {
-    private val hasPersonal: Boolean get() = personal.topPicks.isNotEmpty() || personal.mixes.isNotEmpty() ||
-        personal.releases.isNotEmpty() || personal.stations.isNotEmpty() || personal.replay.isNotEmpty()
-    val beginner: Boolean get() = historyLoaded && settings != null && !hasHistory && !connected && !hasPersonal
+    val beginner: Boolean get() = historyLoaded && settings != null && !hasHistory && !connected
 }
 
 sealed interface HomeEvent {
+    data class LoadMood(val mood: MoodCategory) : HomeEvent
     data object Refresh : HomeEvent
     data class Open(val item: MusicItem, val shelf: HomeShelf) : HomeEvent
     data class Navigate(val nav: Nav) : HomeEvent
@@ -70,6 +68,8 @@ class HomeViewModel @Inject constructor(
     private val settings: SettingsRepository,
 ) : MviViewModel<HomeUiState, HomeEvent, HomeEffect>(HomeUiState()) {
     private var loadJob: Job? = null
+    private val moodRequests = mutableSetOf<MoodCategory>()
+    private val moodSemaphore = kotlinx.coroutines.sync.Semaphore(3)
 
     init {
         viewModelScope.launch { library.recentItems().collect { setState { copy(recent = it.distinctBy(MusicItem::key)) } } }
@@ -82,6 +82,11 @@ class HomeViewModel @Inject constructor(
 
     override fun onEvent(event: HomeEvent) {
         when (event) {
+            is HomeEvent.LoadMood -> viewModelScope.launch {
+                if (!moodRequests.add(event.mood)) return@launch
+                val url = moodSemaphore.withPermit { catalog.moodArtwork(event.mood) }
+                setState { copy(moodArtwork = moodArtwork + (event.mood to url)) }
+            }
             HomeEvent.Refresh -> load(true)
             is HomeEvent.Navigate -> emit(HomeEffect.Navigate(event.nav))
             is HomeEvent.Open -> open(event.item, event.shelf)
@@ -115,12 +120,23 @@ class HomeViewModel @Inject constructor(
                     }
                 }
             }
+            launch {
+                catalog.news(force).collect { res ->
+                    val shelves = when (res) {
+                        is Resource.Success -> res.data
+                        is Resource.Error -> res.cached.orEmpty()
+                        Resource.Loading -> emptyList()
+                    }
+                    val albums = shelves.flatMap { it.items }.filterIsInstance<MusicItem.AlbumItem>().distinctBy { it.key }
+                    if (albums.isNotEmpty()) setState { copy(catalogReleases = albums) }
+                }
+            }
             catalog.home(force).collect { res ->
                 when (res) {
                     Resource.Loading -> Unit
-                    is Resource.Success -> setState { copy(catalogLoading = false, shelves = res.data.shelves.filter { it.items.isNotEmpty() }.take(3)) }
+                    is Resource.Success -> setState { copy(catalogLoading = false, shelves = res.data.shelves.filter { it.items.isNotEmpty() }) }
                     is Resource.Error -> setState {
-                        copy(catalogLoading = false, error = res.message, shelves = res.cached?.shelves?.filter { it.items.isNotEmpty() }?.take(3) ?: shelves)
+                        copy(catalogLoading = false, error = res.message, shelves = res.cached?.shelves?.filter { it.items.isNotEmpty() } ?: shelves)
                     }
                 }
             }
@@ -154,7 +170,7 @@ internal fun HomeContent(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modif
         if (state.loading || (state.beginner && state.catalogLoading)) {
             items(3, key = { "skeleton-$it" }, contentType = { "skeleton" }) { ShelfSkeleton() }
         }
-        if (!state.loading && state.beginner && state.shelves.isNotEmpty()) {
+        if (state.beginner && state.shelves.isNotEmpty()) {
             item(key = "starter-title", contentType = "title") { SectionTitle("Para empezar") }
             items(state.shelves.size, key = { "starter-$it" }, contentType = { "shelf" }) { i ->
                 val shelf = state.shelves[i]
@@ -184,13 +200,14 @@ internal fun HomeContent(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modif
                     SectionTitle("Estados de ánimo")
                     LazyRow(contentPadding = PaddingValues(horizontal = OndaraTheme.spacing.screen), horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.sm)) {
                         items(state.moods, key = { it.browseId + it.params }, contentType = { "mood" }) { mood ->
-                            MoodChip(mood) { send(HomeEvent.Navigate(Nav.Mood(mood.title, mood.browseId, mood.params))) }
+                            LaunchedEffect(mood) { send(HomeEvent.LoadMood(mood)) }
+                            MoodChip(mood, state.moodArtwork[mood]) { send(HomeEvent.Navigate(Nav.Mood(mood.title, mood.browseId, mood.params))) }
                         }
                     }
                 }
             }
         }
-        homeShelf("releases", "Lanzamientos recientes", state.personal.releases, 5, send)
+        homeShelf("releases", "Lanzamientos recientes", state.personal.releases.ifEmpty { state.catalogReleases }, 5, send)
         homeShelf("stations", "Estaciones para ti", state.personal.stations.map { MusicItem.ArtistItem(it) }, 6, send, stations = true)
         if (state.personal.replay.isNotEmpty()) {
             item(key = "replay", contentType = "replay") { ReplayCard(state.personal, send) }
@@ -273,10 +290,10 @@ private fun ReplayCard(home: PersonalHome, send: (HomeEvent) -> Unit) {
 }
 
 @Composable
-private fun MoodChip(mood: MoodCategory, onClick: () -> Unit) {
+private fun MoodChip(mood: MoodCategory, artwork: String?, onClick: () -> Unit) {
     Surface(Modifier.heightIn(min = OndaraTheme.spacing.touch).pressable(haptic = true, onClick = onClick), shape = OndaraTheme.shapes.control, color = OndaraTheme.colors.surfaceHigh) {
         Row(Modifier.padding(horizontal = OndaraTheme.spacing.md, vertical = OndaraTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(OndaraTheme.spacing.sm).clip(CircleShape).background(Color(mood.color.toInt()).copy(alpha = 1f)))
+            Artwork(artwork, Modifier.size(OndaraTheme.spacing.touch), shape = OndaraTheme.shapes.small)
             Spacer(Modifier.width(OndaraTheme.spacing.sm))
             Text(mood.title, style = OndaraTheme.type.label, maxLines = 1)
         }

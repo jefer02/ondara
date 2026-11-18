@@ -106,16 +106,29 @@ se aclaró a `#8E93AB` (5,7:1 sobre la superficie). El texto tinta sobre el bloq
   delgada (56 dp), encima. Al bajar más de 28 dp (`ChromeState`), la píldora se encoge al icono de la pestaña
   activa y el mini-reproductor baja a su lado; al subir o tocarla, se expande. Un resaltado redondeado se desliza
   entre pestañas. En `BOTTOM_BAR` y `SIDE_RAIL`, Buscar es un quinto destino.
+  **v3**: el ancho de cada pestaña es proporcional a la medida de su etiqueta (mínimo 48 dp) y la etiqueta nunca
+  se corta con elipsis: si no cabe (fuente del sistema grande) baja en pasos de 0,25 sp hasta 7 sp
+  (`NavigationLabel`). "Novedades" se lee completa al 130 %.
 - **Encabezado**: título grande en negrita que colapsa a una barra pequeña de vidrio; a la derecha solo el
   avatar (punto de acento si no hay cuentas), que abre la **hoja de Cuenta** (`GlassOverlaySheet`: perfil, cuentas
-  conectadas, Temas, Ajustes, Descargas, Acerca de).
+  conectadas, Temas, Ajustes, Descargas, Acerca de, y el pie "Ondara · por Jeferson Manuel Morillo Vallejo").
+  **v3**: al colapsar, el saludo se desvanece con la altura real del bloque y se recorta por la parte que entra
+  bajo la barra; la barra usa tinte del 92 % del fondo (sin texto fantasma), también en temas mate.
 - **Velos**: bajo la barra de estado, vidrio con desenfoque progresivo en cuanto hay scroll; abajo, `BottomFade`
   detrás de la barra y el mini-reproductor. Las listas reservan `LocalBottomInset` (barra + mini + márgenes).
 - **Inicio**: saludo → banner "Conecta tus cuentas" → Top Picks → Escuchado recientemente → Hecho para ti →
   Tus playlists de YouTube y Spotify → Estados de ánimo → Lanzamientos recientes → Estaciones → Tu Replay.
 - **Novedades**: lanzamientos, listas de éxitos, vídeos populares, géneros. **Radio**: Ondara Flow + radios.
 - **Biblioteca**: fijados 3×2 → categorías → filtro de origen → agregado recientemente.
-- **Buscar**: campo de vidrio + cuadrícula de categorías de color; sugerencias y resultados por tipo.
+- **Buscar**: campo de vidrio + cuadrícula de categorías con carátula real y velo del tema; sugerencias y
+  resultados por tipo. En "Todo": Resultado principal (siempre la canción, no el vídeo) → Canciones → Álbumes →
+  Artistas → Playlists → Vídeos.
+- **Portadas de mix (v3)**: nada de degradados por *hash*. `MixCover` = carátula principal grande + 2–3 carátulas
+  menores giradas (pila de discos) sobre la principal muy desenfocada, grano, viñeta, "Mix · Ondara" y el nombre
+  en la tipografía display. En Tinta: fondo mate y tramado. Mientras cargan, `Skeleton`. **Cada tarjeta muestra su
+  nombre una sola vez**: el de un mix va dentro de la portada y debajo el subtítulo "25 canciones · A, B, C…"; en
+  Top Picks, el motivo ("Porque escuchaste X", nunca igual al título) y el nombre en la franja del color dominante
+  apagado de la carátula.
 
 ## Páginas inmersivas (Artista, Álbum, Playlist)
 
@@ -129,11 +142,17 @@ botones flotantes de vidrio arriba; contenido en `GlassCard`. En temas mate la p
 
 | Layout | Descripción |
 |---|---|
-| `CINEMATIC` ("Cine", por defecto en instalación nueva) | vídeo de la canción a pantalla completa (center crop, mudo, sincronizado con el audio); velos arriba y abajo; línea actual de la letra; píldora "Cambiar a vídeo"; fila de canción con ✕ y ⊕; progreso fino; controles con play en círculo blanco; fila de dispositivos/compartir/cola; tarjeta de letra, créditos y artista al hacer scroll. Sin vídeo: portada con Ken Burns sobre mesh gradient |
+| `CINEMATIC` ("Cine", por defecto en instalación nueva) | **canvas** corto en bucle a pantalla completa (Apple Music / Tidal, o clip de 7 s del vídeo oficial en 720p/1080p, con *crossfade* de 350 ms en el bucle); el espacio libre queda arriba y todo el bloque de controles se ancla abajo: línea actual de la letra en una caja fija de 3 líneas (scrim negro 55 % + sombra, auto-size y elipsis), fila de canción con ✕ y ⊕, progreso fino, controles con play en círculo blanco, fila de dispositivos/temporizador/compartir/cola y el **tirador "Letra"** (48 dp, color dominante apagado de la portada, deslizar o tocar para abrir la letra completa). Sin canvas: portada con Ken Burns |
 | `BENTO` (Tinta) | bloques: portada, título/artista (claro), progreso (primario), controles (apagado) |
 | `ARTWORK_HERO`, `IMMERSIVE`, `MINIMAL`, `VINYL` | los de la v1 |
 
-El usuario elige el layout en Ajustes › Reproductor (vista previa en vivo); "Según el tema" usa el del `ThemeSpec`.
+Todos los layouts comparten los mismos componentes (`PlayerControls.kt`): título y artista en **una línea** con
+marquee lento (elipsis con movimiento reducido), transporte, acciones y tirador de letra; cada layout solo cambia
+la disposición. La posición de los controles no depende de la letra ni del título.
+
+El usuario elige el layout en Ajustes › Reproductor (chips que aplican al instante y vista previa con el
+reproductor real); "Según el tema" usa el del `ThemeSpec`. Cambiar el layout en el editor de temas lo aplica
+("Según el tema").
 
 ## Perfil
 
@@ -160,7 +179,7 @@ desde". Se comparte como imagen (el bento se graba en un `GraphicsLayer`).
 | Hoja de Cuenta | escala 0.72→1 desde la esquina del avatar + alfa, spring del tema |
 | Tramado → color | mezcla del shader 1→0 en `tween(300)` |
 | Perfil | bloques en entrada escalonada de 40 ms; inclinación 3D al mantener presionado |
-| Cine | crossfade vídeo/portada 400 ms; controles 250 ms; Ken Burns 24 s; ondas de doble toque |
+| Cine | crossfade del bucle del canvas 350 ms; canvas/portada 400 ms; controles con spring del tema; Ken Burns 24 s; ondas de doble toque; cambio de línea de letra con fade + desplazamiento dentro de la caja fija |
 | Vinilo | 200°/s; al pausar frena con `motion.gentle()` |
 | Hápticos | `tick` en play/pausa, saltos, chips e interruptores; `edge` al tope de un deslizamiento; `confirm` en pulsación larga y al coger un elemento de la cola |
 

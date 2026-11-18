@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -49,7 +49,6 @@ import app.ondara.core.designsystem.component.Text
 import app.ondara.core.designsystem.component.pressable
 import app.ondara.core.designsystem.icon.Icon
 import app.ondara.core.designsystem.icon.OndaraIcons
-import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.LocalOndaraColors
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.domain.CatalogRepository
@@ -72,12 +71,14 @@ import app.ondara.core.ui.toNav
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
@@ -102,7 +103,7 @@ sealed interface SearchEvent {
     data class Submit(val query: String) : SearchEvent
     data class FilterChanged(val filter: SearchFilter) : SearchEvent
     data class RemoveHistory(val query: String) : SearchEvent
-    data class Open(val item: MusicItem) : SearchEvent
+    data class Open(val item: MusicItem, val songEquivalent: Song? = null) : SearchEvent
     data class LoadArtwork(val mood: MoodCategory) : SearchEvent
     data object ClearHistory : SearchEvent
     data object RetryMoods : SearchEvent
@@ -126,7 +127,13 @@ class SearchViewModel @Inject constructor(
 
     /** Resultados paginados (Paging 3) de la consulta enviada. */
     val results: Flow<PagingData<MusicItem>> = request
-        .flatMapLatest { (q, filter) -> if (q.isBlank()) flowOf(PagingData.empty()) else catalog.search(q, filter) }
+        .flatMapLatest { (q, filter) ->
+            flow {
+                emit(PagingData.empty<MusicItem>())
+                if (q.isNotBlank()) emitAll(catalog.search(q, filter))
+            }
+        }
+        .buffer(0)
         .cachedIn(viewModelScope)
 
     init {
@@ -157,7 +164,7 @@ class SearchViewModel @Inject constructor(
             }
             is SearchEvent.RemoveHistory -> viewModelScope.launch { library.removeSearch(event.query) }
             is SearchEvent.Open -> event.item.toNav()?.let { emit(SearchEffect.Navigate(it)) }
-                ?: player.startRadio((event.item as MusicItem.SongItem).song)
+                ?: player.startRadio(event.songEquivalent ?: (event.item as MusicItem.SongItem).song)
             SearchEvent.Clear -> {
                 query.value = ""
                 request.value = "" to state.value.filter
@@ -222,17 +229,10 @@ internal fun SearchContent(
     resultsFlow: Flow<PagingData<MusicItem>>, modifier: Modifier = Modifier,
 ) {
     val results = resultsFlow.collectAsLazyPagingItems()
-    var firstPageSize by remember(state.submitted, state.filter) { mutableStateOf<Int?>(null) }
-    var refreshing by remember(state.submitted, state.filter) { mutableStateOf(false) }
-    LaunchedEffect(state.submitted, state.filter, results.loadState.refresh, results.itemCount) {
-        if (results.loadState.refresh is LoadState.Loading) refreshing = true
-        if (refreshing && firstPageSize == null && results.loadState.refresh is LoadState.NotLoading && results.itemCount > 0) {
-            firstPageSize = results.itemCount
-        }
-    }
-    val resultRows = remember(results.itemSnapshotList, firstPageSize, state.filter) {
-        resultRows(results.itemSnapshotList.items, firstPageSize ?: results.itemCount, state.filter)
-    }
+    val snapshot = results.itemSnapshotList
+    val loaded = remember(snapshot) { snapshot.items.toList() }
+    val grouped = remember(loaded, state.filter) { searchResults(loaded, state.filter) }
+    val resultRows = grouped.rows
     val focus = LocalFocusManager.current
     var menu by remember { mutableStateOf<Song?>(null) }
     ScreenScaffold("Buscar", modifier, actions = { AvatarButton(onClick = { onNavigate(Nav.Account) }) }) {
@@ -244,7 +244,7 @@ internal fun SearchContent(
         }
         if (state.submitted.isEmpty()) {
             val suggestions = if (state.query.isBlank()) emptyList() else state.suggestions
-            items(suggestions.size, key = { "sug-" + suggestions[it] }, contentType = { "suggestion" }) { i ->
+            items(suggestions.size, key = { "sug-${suggestions[it]}-$it" }, contentType = { "suggestion" }) { i ->
                 TermRow(suggestions[i], OndaraIcons.Search, { focus.clearFocus(); onEvent(SearchEvent.Submit(suggestions[i])) })
             }
             if (state.query.isBlank() && state.history.isNotEmpty()) {
@@ -252,7 +252,7 @@ internal fun SearchContent(
                     SectionTitle("Recientes", Modifier.padding(top = OndaraTheme.spacing.lg), action = "Borrar",
                         onAction = { onEvent(SearchEvent.ClearHistory) })
                 }
-                items(state.history.take(5).size, key = { "his-" + state.history[it] }, contentType = { "history" }) { i ->
+                items(state.history.take(5).size, key = { "his-${state.history[it]}-$it" }, contentType = { "history" }) { i ->
                     val term = state.history[i]
                     TermRow(term, OndaraIcons.History, { focus.clearFocus(); onEvent(SearchEvent.Submit(term)) }) {
                         OndaraIconButton(OndaraIcons.Close, "Quitar $term del historial", { onEvent(SearchEvent.RemoveHistory(term)) }, size = 16.dp)
@@ -272,11 +272,14 @@ internal fun SearchContent(
                     EmptyState(OndaraIcons.Search, "No se pudieron cargar las categorías", message = state.moodsError,
                         action = "Reintentar", onAction = { onEvent(SearchEvent.RetryMoods) })
                 }
-                items(state.moods.withIndex().toList().chunked(2), key = { "moods-${it.first().value.browseId}-${it.first().index}" }, contentType = { "mood-row" }) { row ->
+                items(
+                    state.moods.withIndex().toList().chunked(2),
+                    key = { "moods-${it.first().value.browseId}-${it.first().index}" }, contentType = { "mood-row" },
+                ) { row ->
                     Row(Modifier.padding(horizontal = OndaraTheme.spacing.screen, vertical = OndaraTheme.spacing.sm),
                         horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md)) {
-                        row.forEach { (index, mood) ->
-                            MoodCard(mood, index, state.artwork[mood], Modifier.weight(1f),
+                        row.forEach { (_, mood) ->
+                            MoodCard(mood, state.artwork[mood], Modifier.weight(1f),
                                 onLoad = { onEvent(SearchEvent.LoadArtwork(mood)) },
                                 onClick = { onNavigate(Nav.Mood(mood.title, mood.browseId, mood.params)) })
                         }
@@ -291,7 +294,7 @@ internal fun SearchContent(
                     contentPadding = PaddingValues(horizontal = OndaraTheme.spacing.screen),
                     horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.sm),
                 ) {
-                    items(FILTERS, key = { it.first }) { (filter, label) ->
+                    items(FILTERS, key = { it.first }, contentType = { "filter" }) { (filter, label) ->
                         OndaraChip(label, state.filter == filter, { onEvent(SearchEvent.FilterChanged(filter)) })
                     }
                 }
@@ -302,16 +305,27 @@ internal fun SearchContent(
                     EmptyState(OndaraIcons.Wave, "No se pudo buscar", message = refresh.error.message, action = "Reintentar", onAction = { results.retry() })
                 }
                 else -> {
-                    if (results.itemCount == 0) item(key = "none", contentType = "empty") { EmptyState(OndaraIcons.Search, "Sin resultados", message = "Prueba con otras palabras.") }
+                    if (loaded.isEmpty()) item(key = "none", contentType = "empty") {
+                        EmptyState(OndaraIcons.Search, "Sin resultados", message = "Prueba con otras palabras.")
+                    }
                     items(resultRows.size, key = { index ->
-                        val row = resultRows[index]
-                        row.heading?.let { "heading-$it" } ?: "result-${row.index}-${results.peek(row.index)?.key}"
+                        resultRows[index].key
                     }, contentType = { if (resultRows[it].heading != null) "heading" else "result" }) { i ->
                         val row = resultRows[i]
                         if (row.heading != null) SectionTitle(row.heading)
                         else {
-                            val item = results[row.index]
-                            if (item != null) MusicItemRow(item, { onEvent(SearchEvent.Open(item)) },
+                            val item = row.item
+                            LaunchedEffect(snapshot, row.index) {
+                                // Solo señala precarga: claves y contenido pertenecen al snapshot capturado.
+                                val pagingIndex = snapshot.placeholdersBefore + row.index
+                                if (results.itemSnapshotList === snapshot && pagingIndex in 0 until results.itemCount) {
+                                    results[pagingIndex]
+                                }
+                            }
+                            if (item != null) MusicItemRow(item, {
+                                val equivalent = (item as? MusicItem.SongItem)?.song?.id?.let(grouped.equivalents::get)
+                                onEvent(SearchEvent.Open(item, equivalent))
+                            },
                                 onMore = (item as? MusicItem.SongItem)?.let { song -> { menu = song.song } })
                         }
                     }
@@ -326,7 +340,8 @@ internal fun SearchContent(
 @Composable
 private fun TermRow(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().pressable(onClick = onClick).padding(start = OndaraTheme.spacing.screen, end = OndaraTheme.spacing.xs, top = 6.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth().pressable(onClick = onClick)
+            .padding(start = OndaraTheme.spacing.screen, end = OndaraTheme.spacing.xs, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = OndaraTheme.colors.onMuted, size = 18.dp)
@@ -336,29 +351,15 @@ private fun TermRow(text: String, icon: androidx.compose.ui.graphics.vector.Imag
     }
 }
 
-/** Tono estable y contraste AA con blanco: O(log(1/ε)) por la búsqueda de contraste. */
-private fun moodColor(mood: MoodCategory): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(mood.color.toInt(), hsv)
-    if (hsv[1] < 0.15f) hsv[0] = (mood.title.hashCode() and Int.MAX_VALUE).rem(360).toFloat()
-    val saturated = Color.hsv(hsv[0], hsv[1].coerceAtLeast(0.72f), hsv[2].coerceAtLeast(0.65f))
-    return Color(ColorMath.ensureContrast(saturated.toArgb(), Color.White.toArgb()))
-}
-
 @Composable
-private fun MoodCard(mood: MoodCategory, index: Int, artwork: String?, modifier: Modifier, onLoad: () -> Unit, onClick: () -> Unit) {
+private fun MoodCard(mood: MoodCategory, artwork: String?, modifier: Modifier, onLoad: () -> Unit, onClick: () -> Unit) {
     LaunchedEffect(mood) { onLoad() }
     val colors = OndaraTheme.colors
-    val ink = OndaraTheme.spec.ditherArtwork
-    val blockIndex = index % 3
-    val background = if (ink) when (blockIndex) {
-        0 -> colors.blockPrimary
-        1 -> colors.blockLight
-        else -> colors.blockMuted
-    } else remember(mood) { moodColor(mood) }
-    val foreground = if (ink) { if (blockIndex == 2) colors.onBlockMuted else colors.onBlock } else Color.White
+    val background = colors.background.copy(alpha = 0.9f)
+    val foreground = colors.onBackground
     Box(modifier.aspectRatio(1.45f).clip(OndaraTheme.shapes.medium).background(background).pressable(onClick = onClick)) {
-        if (artwork != null) Artwork(artwork,
+        if (artwork == null) Skeleton(Modifier.fillMaxSize())
+        else Artwork(artwork,
             Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.85f).aspectRatio(1f).graphicsLayer {
                 rotationZ = 18f
                 translationX = size.width * 0.24f

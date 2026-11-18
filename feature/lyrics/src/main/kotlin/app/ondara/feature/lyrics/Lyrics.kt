@@ -36,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
@@ -60,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.ondara.core.designsystem.component.EmptyState
+import app.ondara.core.designsystem.theme.LocalContentColor
 import app.ondara.core.designsystem.component.Label
 import app.ondara.core.designsystem.component.LocalBottomInset
 import app.ondara.core.designsystem.component.MeshGradientBackground
@@ -286,14 +289,44 @@ fun CurrentLyricLine(modifier: Modifier = Modifier, color: Color = Color.Unspeci
     val state by viewModel.state.collectAsStateWithLifecycle()
     val index = activeLine(state.lyrics, viewModel)
     val line = state.lyrics?.takeIf { it.synced }?.lines?.getOrNull(index)
+    CurrentLyricLineContent(line?.text.orEmpty(), modifier, color)
+}
+
+/** Caja estable de tres líneas y búsqueda acotada del tamaño: O(8·n) para n caracteres. */
+@Composable
+fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified) {
     val motion = OndaraTheme.motion
-    val offset = with(LocalDensity.current) { OndaraTheme.spacing.md.roundToPx() }
-    AnimatedContent(line, modifier, transitionSpec = {
-        (fadeIn(motion.spring()) + slideInVertically(motion.spring()) { if (motion.reduced) 0 else offset }) togetherWith
-            (fadeOut(motion.spring()) + slideOutVertically(motion.spring()) { if (motion.reduced) 0 else -offset })
-    }, label = "línea actual") { current ->
-        if (current != null) Text(current.text, style = OndaraTheme.type.lyric.copy(fontWeight = FontWeight.Bold),
-            color = color, textAlign = TextAlign.Start)
+    val density = LocalDensity.current
+    val style = OndaraTheme.type.lyric.copy(fontWeight = FontWeight.Bold)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val height = with(density) { style.lineHeight.toDp() * 3 }
+    val offset = with(density) { OndaraTheme.spacing.md.roundToPx() }
+    val shadowRadius = with(density) { OndaraTheme.spacing.xs.toPx() }
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.height(height).clipToBounds(), contentAlignment = Alignment.BottomStart) {
+        val constraints = androidx.compose.ui.unit.Constraints(
+            maxWidth = with(density) { maxWidth.roundToPx() }, maxHeight = with(density) { height.roundToPx() },
+        )
+        AnimatedContent(text, Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart, transitionSpec = {
+            ((fadeIn(motion.spring()) + slideInVertically(motion.spring()) { if (motion.reduced) 0 else offset }) togetherWith
+                (fadeOut(motion.spring()) + slideOutVertically(motion.spring()) { if (motion.reduced) 0 else -offset }))
+                .using(androidx.compose.animation.SizeTransform(clip = true) { _, _ -> androidx.compose.animation.core.snap() })
+        }, label = "línea actual") { current ->
+            val fitted = remember(current, style, constraints, density.density, density.fontScale) {
+                var low = .65f
+                var high = 1f
+                repeat(8) {
+                    val scale = (low + high) / 2
+                    val measured = measurer.measure(current, style.copy(fontSize = style.fontSize * scale,
+                        lineHeight = style.lineHeight * scale), maxLines = 3, constraints = constraints)
+                    if (measured.hasVisualOverflow) high = scale else low = scale
+                }
+                style.copy(fontSize = style.fontSize * low, lineHeight = style.lineHeight * low)
+            }
+            BasicText(current, style = fitted.copy(
+                color = if (color == Color.Unspecified) LocalContentColor.current else color,
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .55f), blurRadius = shadowRadius),
+            ), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -416,7 +449,10 @@ private fun LyricLineRow(line: LyricLine, distance: Int, isActive: Boolean, posi
             BasicText(
                 text,
                 Modifier.clearAndSetSemantics { },
-                style = style.copy(color = if (isActive && line.words.isNotEmpty()) colors.onBackground.copy(alpha = 0.38f) else colors.onBackground, textAlign = TextAlign.Start),
+                style = style.copy(
+                    color = if (isActive && line.words.isNotEmpty()) colors.onBackground.copy(alpha = 0.38f) else colors.onBackground,
+                    textAlign = TextAlign.Start,
+                ),
                 onTextLayout = { layout = it },
             )
             if (isActive && line.words.isNotEmpty()) {

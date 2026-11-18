@@ -1,59 +1,43 @@
+// Adaptado de Echo Music (https://github.com/EchoMusicApp/Echo-Music), GPL-3.0.
 package app.ondara.playback
 
+import app.ondara.core.domain.LyricsRepository
+import app.ondara.core.model.Canvas
+import app.ondara.core.model.CanvasSource
 import app.ondara.core.model.Song
-import app.ondara.source.resolver.ResolvedVideo
+import app.ondara.source.canvas.*
 import app.ondara.source.resolver.StreamResolver
 import app.ondara.source.resolver.VideoSearchHit
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.text.Normalizer
 import kotlin.math.abs
 
-/** Fuente intercambiable: null delega en la siguiente estrategia. */
-fun interface VideoSource {
-    suspend fun resolve(song: Song): ResolvedVideo?
-}
-
-class OfficialVideoSource(private val resolver: StreamResolver) : VideoSource {
-    override suspend fun resolve(song: Song): ResolvedVideo? = resolver.resolveVideo(song.id)?.takeIf { it.hasVideo && !it.isArtTrack }
-}
-
-class SearchVideoSource(private val resolver: StreamResolver) : VideoSource {
-    override suspend fun resolve(song: Song): ResolvedVideo? {
-        val candidates = resolver.searchVideos("${song.title} ${song.artistLine}")
+/** Respaldo independiente del audio; busca el vídeo oficial antes de probar el ID de la canción. */
+class YouTubeCanvasProvider(
+    private val resolver: StreamResolver,
+    private val lyrics: LyricsRepository,
+    private val allowed: () -> Boolean,
+) : CanvasProvider {
+    /** O(r log r) candidatos; cálculo del clip O(n) líneas. */
+    override suspend fun resolve(song: Song): CanvasResult? {
+        if (!allowed()) return null
+        val hits = resolver.searchVideos("${song.title} ${song.artistLine}")
+            .filter { canvasArtistMatches(song, it.author) }
             .map { it to VideoSearchScore.score(song, it) }.filter { it.second > 0 }.sortedByDescending { it.second }
-        for ((hit, _) in candidates) {
-            val video = resolver.resolveVideo(hit.videoId)
-            if (video != null && video.hasVideo && !video.isArtTrack) return video
+        val ids = (hits.map { it.first.videoId } + song.id).distinct()
+        for (id in ids) {
+            val video = resolver.resolveVideo(id)?.takeIf { it.hasVideo && !it.isArtTrack && it.durationSec > 0 } ?: continue
+            if (id == song.id && !canvasArtistMatches(song, video.author.orEmpty())) continue
+            if (video.author?.let { canvasArtistMatches(song, it) } == false) continue
+            val stream = video.videoOnly ?: continue
+            val words = canvasAttempt { lyrics.lyrics(song) }
+            val clip = canvasClip(video.durationSec * 1000L, words)
+            return CanvasResult(
+                Canvas(song.id, stream.url, CanvasSource.YOUTUBE_CLIP, clip.first, clip.second, stream.width, stream.height),
+                song.artistLine, video.expiresAtMs,
+            )
         }
         return null
     }
-}
-
-/** Última fuente: la interfaz presenta la portada cuando no hay vídeo. */
-class ArtworkVideoSource : VideoSource {
-    override suspend fun resolve(song: Song): ResolvedVideo? = null
-}
-
-/**
- * Cadena con caché LRU, incluidos resultados negativos (5 minutos). Serializa las consultas para
- * compartir pre-resoluciones. O(k) fuentes por fallo, O(1) por acierto; espacio O(64).
- */
-class VideoSourceChain(private val sources: List<VideoSource>, private val now: () -> Long = System::currentTimeMillis) : VideoSource {
-    private data class Entry(val video: ResolvedVideo?, val expires: Long)
-    private val mutex = Mutex()
-    private val cache = object : LinkedHashMap<String, Entry>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > 64
-    }
-
-    override suspend fun resolve(song: Song): ResolvedVideo? = mutex.withLock {
-        cache[song.id]?.takeIf { it.expires > now() }?.let { return@withLock it.video }
-        val video = sources.firstNotNullOfOrNull { it.resolve(song) }
-        cache[song.id] = Entry(video, video?.expiresAtMs?.minus(60_000) ?: (now() + 300_000))
-        video
-    }
-
-    suspend fun invalidate(songId: String) = mutex.withLock { cache.remove(songId); Unit }
 }
 
 object VideoSearchScore {

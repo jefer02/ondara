@@ -174,7 +174,8 @@ fun MusicCard(item: MusicItem, onClick: () -> Unit, modifier: Modifier = Modifie
             Artwork(image, Modifier.size(size), shape = if (artist) CircleShape else OndaraTheme.shapes.artwork, sizePx = 360)
         }
         Spacer(Modifier.height(OndaraTheme.spacing.sm))
-        Text(title, style = OndaraTheme.type.bodyStrong, maxLines = 1, textAlign = if (artist) TextAlign.Center else null)
+        val generated = item is MusicItem.PlaylistItem && app.ondara.core.model.MixIds.isVirtual(item.playlist.id)
+        if (!generated) Text(title, style = OndaraTheme.type.bodyStrong, maxLines = 1, textAlign = if (artist) TextAlign.Center else null)
         if (subtitle.isNotEmpty()) {
             Text(subtitle, style = OndaraTheme.type.caption, color = OndaraTheme.colors.onMuted, maxLines = 1)
         }

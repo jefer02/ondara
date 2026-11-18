@@ -26,17 +26,6 @@ class VideoTest {
     )
 
     @Test
-    fun `sincronizacion respeta umbral pausa y final corto`() {
-        assertNull(VideoSync.correction(1000, 850, 5000, true))
-        assertNull(VideoSync.correction(1000, 1150, 5000, true))
-        assertEquals(1000L, VideoSync.correction(1000, 849, 5000, true))
-        assertEquals(1000L, VideoSync.correction(1000, 1151, 5000, true))
-        assertNull(VideoSync.correction(1000, 0, 5000, false))
-        for (position in 2000L..3000L) assertNull(VideoSync.correction(position, 1999, 2000, true))
-        assertEquals(0L, VideoSync.correction(-100, 500, -1, true))
-    }
-
-    @Test
     fun `red restringe redes medidas y permite ethernet`() {
         assertTrue(VideoNetworkPolicy.allowed(true, true, true, true, true))
         assertTrue(VideoNetworkPolicy.allowed(true, false, true, false, false))
@@ -57,55 +46,50 @@ class VideoTest {
     }
 
     @Test
-    fun `cadena prioriza oficial y cachea aciertos`() = runBlocking {
-        var officialCalls = 0
-        var searchCalls = 0
-        val expected = video()
-        val chain = VideoSourceChain(listOf(
-            VideoSource { officialCalls++; expected }, VideoSource { searchCalls++; expected }, ArtworkVideoSource(),
-        ))
-        assertEquals(expected, chain.resolve(song))
-        assertEquals(expected, chain.resolve(song))
-        assertEquals(1, officialCalls)
-        assertEquals(0, searchCalls)
-    }
-
-    @Test
-    fun `cadena delega en busqueda y cachea negativos hasta caducar`() = runBlocking {
-        var calls = 0
-        var now = 0L
-        val chain = VideoSourceChain(listOf(VideoSource { calls++; null }, ArtworkVideoSource())) { now }
-        assertNull(chain.resolve(song))
-        assertNull(chain.resolve(song))
-        assertEquals(1, calls)
-        now = 300_001
-        assertNull(chain.resolve(song))
-        assertEquals(2, calls)
-        val expected = video()
-        val searched = VideoSourceChain(listOf(VideoSource { null }, VideoSource { expected }, ArtworkVideoSource()))
-        assertEquals(expected, searched.resolve(song))
-        searched.invalidate(song.id)
-        assertEquals(expected, searched.resolve(song))
-    }
-
-    @Test
-    fun `fuentes reales descartan art track y buscan candidato equivalente`() = runBlocking {
+    fun `youtube busca primero el oficial y recorta siete segundos`() = runBlocking {
         val expected = video()
         val strategy = object : StreamStrategy, VideoStreamStrategy, VideoSearchStrategy {
-            override val name = "fake"
+            override val name = "prueba"
             override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> = Result.failure(IllegalStateException())
-            override suspend fun resolveVideo(videoId: String): Result<ResolvedVideo> =
-                Result.success(if (videoId == song.id) expected.copy(isArtTrack = true) else expected)
-            override suspend fun searchVideos(query: String): Result<List<VideoSearchHit>> {
-                assertEquals("Canción azul Artista", query)
-                return Result.success(listOf(
-                    VideoSearchHit("wrong", "Otra canción", "Artista", 200),
-                    VideoSearchHit("official", "Artista Canción azul Official Video", "Artista", 202),
-                ))
+            override suspend fun resolveVideo(videoId: String): Result<ResolvedVideo> {
+                assertEquals("official", videoId)
+                return Result.success(expected)
             }
+            override suspend fun searchVideos(query: String) = Result.success(listOf(
+                VideoSearchHit("wrong", "Canción azul", "Otro artista", 200),
+                VideoSearchHit("official", "Artista Canción azul Official Video", "Artista", 200),
+            ))
         }
         val resolver = StreamResolver(listOf(strategy), ResolvedStreamCache())
-        assertNull(OfficialVideoSource(resolver).resolve(song))
-        assertEquals(expected, SearchVideoSource(resolver).resolve(song))
+        val lyrics = object : app.ondara.core.domain.LyricsRepository {
+            override suspend fun lyrics(song: Song, forceRefresh: Boolean): app.ondara.core.model.Lyrics? = null
+        }
+        val result = YouTubeCanvasProvider(resolver, lyrics) { true }.resolve(song)!!.canvas
+        assertEquals(app.ondara.core.model.CanvasSource.YOUTUBE_CLIP, result.source)
+        assertEquals(96_500L, result.clipStartMs)
+        assertEquals(103_500L, result.clipEndMs)
+        assertNull(YouTubeCanvasProvider(resolver, lyrics) { false }.resolve(song))
+    }
+
+    @Test
+    fun `respaldo propio rechaza art track y autor distinto`() = runBlocking {
+        var own = video().copy(author = "Artista", isArtTrack = true)
+        val strategy = object : StreamStrategy, VideoStreamStrategy {
+            override val name = "prueba"
+            override suspend fun resolve(videoId: String, quality: AudioQuality): Result<ResolvedStream> = Result.failure(IllegalStateException())
+            override suspend fun resolveVideo(videoId: String) = Result.success(own)
+        }
+        val resolver = StreamResolver(listOf(strategy), ResolvedStreamCache())
+        val lyrics = object : app.ondara.core.domain.LyricsRepository {
+            override suspend fun lyrics(song: Song, forceRefresh: Boolean): app.ondara.core.model.Lyrics? = null
+        }
+        val provider = YouTubeCanvasProvider(resolver, lyrics) { true }
+        assertNull(provider.resolve(song))
+        own = own.copy(isArtTrack = false, author = "Otro")
+        resolver.invalidateVideo(song.id)
+        assertNull(provider.resolve(song))
+        own = own.copy(author = "Artista")
+        resolver.invalidateVideo(song.id)
+        assertEquals(song.id, provider.resolve(song)?.canvas?.songId)
     }
 }

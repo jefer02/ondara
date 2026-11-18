@@ -1,10 +1,18 @@
 package app.ondara.feature.player
 
 import app.ondara.core.designsystem.theme.PlayerLayout
+import app.ondara.core.designsystem.theme.ColorMath
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class PlayerGeometryTest {
+    @Test fun `letra blanca sobre portada blanca con scrim alcanza AA`() {
+        val white = 0xFFFFFFFF.toInt()
+        val effectiveBackground = ColorMath.mix(white, 0xFF000000.toInt(), CINEMATIC_LYRIC_SCRIM)
+        assertTrue(ColorMath.contrast(white, effectiveBackground) >= ColorMath.AA_TEXT)
+    }
+
     @Test fun `Cine es independiente del tema`() {
         PlayerLayout.entries.forEach { assertEquals(PlayerLayout.CINEMATIC, resolvePlayerLayout(app.ondara.core.model.UserSettings().playerLayout, it)) }
     }

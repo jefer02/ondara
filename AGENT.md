@@ -34,7 +34,8 @@ los tests de Robolectric deben ir con `--max-workers=1` (cada JVM de test reserv
 :source:resolver     StreamResolver + estrategias + caché LRU/TTL (JVM)
 :source:lyrics       proveedores, parsers LRC/KRC, agregador con scoring (JVM)
 :source:spotify      SpotifyAuthProvider (PKCE oficial / cookie experimental), cliente, TrackMatcher (JVM)
-:playback            ExoPlayer, MediaLibraryService, crossfade, descargas, widget, vídeo de fondo (Cine)
+:source:canvas       cadena de proveedores de canvas (Apple Music → Tidal), caché LRU + JSON y cálculo del clip (JVM)
+:playback            ExoPlayer, MediaLibraryService, crossfade, descargas, widget, canvas en bucle (Cine)
 :feature:*           home, news, radio, search, library, player, album, artist, playlist, lyrics, settings, themes, account
 :benchmark           Macrobenchmark + generador de Baseline Profile
 build-logic/         convention plugins (ondara.jvm.library, ondara.android.library/compose/feature/application, ondara.hilt)
@@ -79,8 +80,16 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
 | Ranking de Top Picks / mixes (`rankBy`) | `core/data/PersonalRepositoryImpl.kt` | O(n log n) |
 | Estado de ánimo por géneros (MusicBrainz, caché Room) | `PersonalRepositoryImpl.MoodClassifier` | O(a·t), a artistas, t etiquetas |
 | Traducción de letras por lotes de 1 400 caracteres | `core/data/LyricsTranslator.kt` | O(n), ⌈chars/1400⌉ peticiones |
-| Sincronía vídeo↔audio (corrección si deriva > 150 ms) | `playback/VideoSync.kt` | O(1) por tick |
-| Agrupación de resultados de búsqueda | `feature/search/SearchResults.kt` | O(n) |
+| Agrupación de resultados de búsqueda (resultado principal = canción; vídeos al final) | `feature/search/SearchResults.kt` | O(n) |
+| Equivalencia vídeo → canción (título normalizado + artista + duración ±9 s) | `core/domain/SongEquivalence.kt` | O(n + l) construcción, O(l) por consulta |
+| Canción equivalente en la primera página de "Todo" | `core/data/CatalogRepositoryImpl.preferSong` | O(n + m + l), ≤ 1 petición extra |
+| Cadena de canvas Apple Music → Tidal → clip de YouTube | `source/canvas/CanvasChain.kt` | O(p) proveedores; acierto de caché O(1) (LRU 64 + JSON) |
+| Clip de 7 s (estribillo = línea más repetida, o centro) | `source/canvas/CanvasChain.canvasClip` | O(n + c) |
+| Stream de vídeo del canvas (1080p → 720p → >1080p → SD) | `source/resolver/Video.kt` `pickBackground` | O(n) tiempo, O(1) espacio |
+| Portada de mix (pila de carátulas rasterizada, LRU 16 MiB) | `core/ui/MixCover.kt` | O(p) píxeles al generar, O(1) en acierto |
+| Subtítulo de mix ("N canciones · A, B, C…") | `core/model/MixPresentation.kt` | O(n + a log a) |
+| Etiqueta de pestaña con *auto-size* por pasos | `designsystem/component/Layout.kt` `NavigationLabel` | O(k·l), solo al cambiar ancho o texto |
+| Línea de letra en caja fija (búsqueda binaria del tamaño, 8 pasos) | `feature/lyrics/Lyrics.kt` `CurrentLyricLineContent` | O(8·n) por línea nueva |
 | Dithering Bayer 4×4 (AGSL) | `designsystem/component/Effects.kt` | O(1) por píxel |
 | Colapso del título grande / barra inferior (NestedScroll) | `designsystem/component/Layout.kt` | O(1) por evento de scroll |
 
@@ -152,10 +161,9 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
     en 300 ms al reproducir. Iconos dibujados a mano (`HandDrawnIcons`) sustituyen al set por nombre.
 39. **Reproductor "Cine"** (`PlayerLayout.CINEMATIC`): valor por defecto en la primera instalación
     (`UserSettings.playerLayout = "CINEMATIC"`); `"THEME"` respeta el layout de cada tema. El vídeo de fondo
-    (`VideoBackgroundController`) usa un segundo ExoPlayer silenciado con el stream de vídeo de menor calidad,
-    con estrategias `VideoSource`: vídeo propio → búsqueda del vídeo oficial → portada con Ken Burns + mesh.
-    Solo en Wi-Fi por defecto, se detiene en segundo plano o con la pantalla apagada y respeta movimiento
-    reducido. En Tinta el vídeo puede verse con dithering.
+    **v3: ya no es el vídeo completo** sino un *canvas* corto en bucle (ver "Decisiones v3"): Apple Music →
+    Tidal → clip de 7 s del vídeo de YouTube en 720p/1080p. Se detiene en segundo plano, con la pantalla
+    apagada, fuera de Cine y con movimiento reducido. En Tinta el canvas puede verse con dithering.
 40. **Perfil bento**: paleta extraída con `androidx.palette`; cara dibujada según el ánimo dominante; compartir
     genera un PNG y lo comparte por `FileProvider` (`${applicationId}.share`).
 41. **Screenshots por pantalla**: cada feature visible (Inicio, Buscar, Biblioteca, Artista, Perfil, Letras,
@@ -164,6 +172,90 @@ letra de `:feature:lyrics` en `:feature:player` como *slot*. `:playback` impleme
     tramado de vídeo va desactivado: en Robolectric el `RenderEffect` AGSL del fondo se extiende a las capas
     hermanas (texto y controles); en código el fondo y la interfaz son capas separadas, pero falta verificarlo
     en un dispositivo.
+
+## Decisiones v3 (correcciones de REF 6)
+
+Dirección: Claude Code diagnosticó, escribió los *briefs* (`.codex-tasks/*.md`), revisó cada diff, compiló y
+probó; **Codex CLI** escribió el grueso del código en *worktrees* aislados (`codex/<tarea>`), de dos en dos y sin
+ejecutar Gradle. Cada entrega se revisó entera, se compiló, se integró con `merge --no-ff` y se borró su worktree.
+
+42. **Crasheo al buscar (P1)** — *Codex `search`*. Causa probable (sin stacktrace ni dispositivo): la lambda
+    `key` del `LazyColumn` y el contenido leían de Paging por índice (`peek`/`get`) con índices de **otro**
+    snapshot; al cerrar el teclado o al cambiar de filtro la `PagingData` encoge entre medida y composición →
+    `IndexOutOfBoundsException`. Ahora un único snapshot inmutable alimenta filas, claves y contenido; el acceso
+    a Paging (para pedir más páginas) va en `LaunchedEffect` con rango comprobado; claves `tipo_id_índice` únicas
+    también en sugerencias e historial; `listItem` del parser tolera renderers incompletos. Regresión:
+    `SearchPagingRegressionTest` (Robolectric, lista que encoge + ids repetidos), Unicode/emoji en
+    `SearchViewModelTest`, fixture `search_incomplete.json`.
+    *Claude*: restauró la deduplicación entre páginas que Codex había quitado de `SearchPagingSource` (sin ella
+    volvían las claves repetidas) y ajustó `SearchPagingSourceTest` y `SearchViewModelTest` a las firmas reales.
+43. **Canción antes que vídeo (P8)** — *Codex `search`*. `Song.videoType` (`MusicVideoType`, último campo,
+    compatible con el JSON cacheado) se lee de `watchEndpointMusicConfig.musicVideoType` (ATV → canción,
+    OMV/UGC → vídeo). En "Todo" el resultado principal es la canción equivalente (índice O(n)); si no está, una
+    sola petición extra con el filtro Canciones en la primera página. Secciones: principal → Canciones →
+    Álbumes → Artistas → Playlists → Vídeos. Tocar un vídeo reproduce su canción equivalente si existe.
+44. **Canvas en bucle (P2)** — *Codex `canvas`*. Nuevo `:source:canvas` (JVM): cadena de responsabilidad
+    Apple Music → Tidal (se valida el artista) con caché LRU de 64 + archivo JSON y caducidad de URL. Si no hay
+    canvas, `YouTubeCanvasProvider` toma un clip de 7 s (`ClippingConfiguration`) del vídeo oficial en 1080p/720p,
+    empezando en el estribillo (línea de letra más repetida) o en el centro. Dos ExoPlayer en ranuras alternas con
+    *crossfade* de 350 ms en el bucle, `SimpleCache` propia de 200 MB y precarga de la siguiente canción. Solo el
+    clip de YouTube respeta "solo Wi-Fi" (los canvas son de pocos cientos de KB). Se eliminaron `VideoSync`, el
+    controlador de vídeo completo y el modo "vídeo completo" (se pierde también la transición compartida de la
+    portada del fondo antiguo). **Spotify Canvas no se integró**: la integración de Spotify existente no ofrece una
+    consulta de canvas verificable sin endpoints privados. Técnicas tomadas de Echo Music (GPL-3.0), acreditado
+    en cabeceras y README.
+    *Claude*: si un canvas falla al reproducir, `onPlayerError` invalida su entrada de caché
+    (`CanvasChain.invalidate`) para no quedarse con una URL caducada; arregló los hallazgos de detekt.
+45. **Inicio sin colores genéricos ni texto duplicado (P6, P12)** — *Codex `home-covers`*. `Playlist.artworkUrls`
+    (último campo) con hasta 4 carátulas reales; `MixCover` dibuja una pila de discos sobre la carátula principal
+    desenfocada (API 31+) o reducida a 8 px con velo (< 31 y Tinta), cacheada como bitmap (LRU 16 MiB, clave = id +
+    URLs + fondo + tema). Desaparecen `mixColors` y `moodColor`. Sin historial, los mixes se rellenan con Novedades
+    del catálogo; si no hay carátulas, el mix no se muestra. Cada tarjeta muestra su nombre una sola vez (el título
+    va dentro de la portada; debajo, "N canciones · artistas"); las etiquetas de Top Picks no repiten el título
+    (`distinctPickLabel`). Ánimos con carátula real (`moodArtwork`) y velo del tema.
+    *Claude*: quitó el candado global que serializaba la generación de todas las portadas (las descargas iban de
+    una en una), añadió `onError` a `Artwork` para que un fallo no deje el *shimmer* para siempre y cacheó la
+    medida de las etiquetas de la barra.
+46. **Etiqueta "Novedad…" (P13)** — *Codex `home-covers` + Claude*. Codex repartió el ancho de la píldora en
+    proporción a la medida de cada etiqueta. Su `NavigationLabel` escalaba la fuente con una regla de tres y el
+    test nuevo (`NavigationLabelTest`, fuente al 130 % en 6 temas) **fallaba** (el ancho de los glifos no escala
+    lineal). *Claude* la reescribió con `BasicText(autoSize = TextAutoSize.StepBased(7 sp…label, 0.25 sp))`.
+47. **Texto fantasma al colapsar (P14)** — *Codex `home-covers`*. El desvanecimiento usa la altura real medida
+    del bloque (`onSizeChanged`) y `drawWithContent { clipRect(top = offset) }` recorta lo que entra bajo la barra
+    (así tampoco llega a la fuente de Haze); tinte de la barra al 92 % y progresivo 1 → 0.85.
+48. **Reproductor (P3, P4, P5, P10, P11)** — *Codex `player-ui`*. Controles anclados abajo (el espacio libre
+    queda arriba, sobre el canvas); la línea actual de la letra vive en una caja fija de 3 líneas con *auto-size*
+    (búsqueda binaria) y elipsis, `AnimatedContent` con `SizeTransform` que no cambia la altura; scrim negro al
+    55 % + sombra de texto (contraste 4.74:1 sobre portada blanca, `CurrentLyricLineTest`); título y artista en
+    una línea con `basicMarquee` (elipsis con movimiento reducido) en todos los layouts; la franja roja "Vista
+    previa de la letra" se sustituye por un tirador de 48 dp ("Abrir letra", deslizar o tocar) con el color
+    dominante apagado de la portada. Componentes compartidos en `PlayerControls.kt` (metadatos, transporte,
+    acciones, tirador). Test de posición Y del botón play con títulos/letras cortos y largos.
+    *Claude*: reparó la compilación (Codex quitó imports de `getValue`/`setValue` y usó un `LocalContentColor`
+    inexistente), un `BoxWithConstraints` sin usar (lint) y detekt.
+49. **"Solo funciona Cine" (P7)** — causa raíz encontrada por *Claude* (Codex no la confirmó). La persistencia,
+    el `Flow` de ajustes y `resolvePlayerLayout` funcionaban; el problema es de precedencia: desde v2
+    `UserSettings.playerLayout = "CINEMATIC"` es un valor **explícito**, que gana siempre al layout del tema. El
+    editor de temas ofrece "Layout del reproductor" y la galería muestra el layout de cada tema, pero ese valor
+    nunca se aplicaba. Ahora, si el usuario cambia el layout en el editor, "Guardar y aplicar" pasa a "Según el
+    tema" (`settingsAfterThemeSave`, con test); si no lo toca, se respeta su elección. Además (*Codex*): el selector
+    de Ajustes > Reproductor aplica al instante con chips y muestra una vista previa con el reproductor real,
+    el canvas se activa solo en Cine (`FullPlayer` controla `CanvasActive` según el layout) y los paneles se
+    reinician al cambiar de layout.
+50. **Créditos (P9)** — *Claude*. `OndaraAuthor` (nombre, GitHub, Instagram) en `feature/account/Credits.kt`:
+    pantalla "Acerca de Ondara" (logo con tokens, versión, botones que abren la app de Instagram o el navegador),
+    pie en la hoja de Cuenta, último paso del onboarding y sección "Autor" del README.
+
+## Estado de verificación (2026-11-18, v3)
+
+| Comprobación | Resultado |
+|---|---|
+| `./gradlew :app:assembleDebug` | OK |
+| `./gradlew test` | 287 tests, 0 fallos (3 omitidos: los *live*, opt-in) |
+| `recordRoborazziDebug` (módulo a módulo) | 8 módulos; reproductor: 6 layouts × 7 temas + Cine; Inicio, Buscar, Biblioteca, Letras, Cuenta, Artista, showcase y app |
+| `./gradlew detekt` | sin hallazgos |
+| `./gradlew :app:lintDebug` | 0 errores |
+| Dispositivo (`adb devices`) | ninguno conectado: nada verificado en hardware |
 
 ## Estado de verificación (2026-11-17, v2)
 
@@ -190,6 +282,10 @@ No había dispositivo ni emulador (máquina sin KVM configurado y con 9 GB de RA
 - El Baseline Profile incluido (`app/src/main/baseline-prof.txt`) está escrito a mano con las rutas
   críticas; el generador (`BaselineProfileGenerator`) lo regenera en un dispositivo.
 - Android Auto y el widget no se probaron en hardware.
+- **v3 sin dispositivo**: el crasheo de búsqueda se corrigió sobre la causa más probable (no había stacktrace) y
+  su test Robolectric no se ejecutó contra el código antiguo; los endpoints de canvas de Apple Music y Tidal, el
+  clip de YouTube, el *crossfade* del bucle y la caché de 200 MB; el desenfoque real de las portadas de mix
+  (API 31+); el marquee y el gesto del tirador de letra en un dispositivo.
 - **v2 sin dispositivo**: inicio de sesión real en YouTube Music y Spotify (WebView, Custom Tabs, cookies),
   la sincronización con WorkManager, el vídeo de fondo del layout Cine (segundo ExoPlayer, sincronía,
   Wi-Fi), el tramado de vídeo en Tinta, el desenfoque progresivo de Haze y las animaciones de la barra

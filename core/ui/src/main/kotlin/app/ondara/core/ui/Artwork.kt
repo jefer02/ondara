@@ -8,6 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.ondara.core.designsystem.component.twoToneDither
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.fillMaxSize
+import app.ondara.core.designsystem.component.Skeleton
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +66,8 @@ fun Artwork(
         if (url == null) {
             Icon(OndaraIcons.Wave, null, tint = colors.onMuted, size = 22.dp)
         } else {
+            var loaded by remember(url) { mutableStateOf(false) }
+            if (!loaded) Skeleton(Modifier.fillMaxSize(), shape)
             val context = LocalContext.current
             val amount by animateFloatAsState(if (playing) 0f else 1f, tween(300), label = "dither")
             AsyncImage(
@@ -70,6 +77,9 @@ fun Artwork(
                     if (dither) Modifier.twoToneDither(colors.onBlock, colors.blockLight, amount = { amount }) else Modifier,
                 ),
                 contentScale = ContentScale.Crop,
+                onSuccess = { loaded = true },
+                // Si falla, se quita el shimmer: queda el fondo del tema en vez de una carga eterna.
+                onError = { loaded = true },
             )
         }
     }
