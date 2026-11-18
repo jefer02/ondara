@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -40,15 +39,13 @@ internal fun CinematicPlayerLayout(
     val song = state.player.current ?: return
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
-    var controls by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf("") }
     var added by remember(song.id) { mutableStateOf(false) }
     var wave by remember { mutableStateOf(0L to 0L) }
-    val motion = OndaraTheme.motion
     val haptics = rememberHaptics()
     BackHandler(panel.isNotEmpty()) { panel = "" }
     Box(Modifier.fillMaxSize().background(colors.background).pointerInput(Unit) {
-        detectTapGestures(onTap = { controls = !controls }, onDoubleTap = {
+        detectTapGestures(onDoubleTap = {
             val delta = doubleTapDelta(it.x, size.width.toFloat())
             onEvent(PlayerEvent.SeekBy(delta)); wave = System.nanoTime() to delta
         })
@@ -57,7 +54,7 @@ internal fun CinematicPlayerLayout(
             CanvasBackground(
                 state.canvas, state.canvasSurfaces, song.thumbnailUrl,
                 { slot, surface -> onEvent(PlayerEvent.CanvasSurface(slot, surface)) },
-                Modifier.fillMaxSize().then(if (panel == "Letra") Modifier.blur(24.dp) else Modifier),
+                Modifier.fillMaxSize(),
                 dither = OndaraTheme.spec.ditherArtwork && state.settings.ditherVideo,
             )
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
@@ -65,40 +62,37 @@ internal fun CinematicPlayerLayout(
             ))))
             SeekWaves(wave)
         }
-        AnimatedVisibility(controls || panel.isNotEmpty(),
-            enter = fadeIn(motion.spring()), exit = fadeOut(motion.spring())) {
-            Column(Modifier.fillMaxSize()
-                .statusBarsPadding().navigationBarsPadding().padding(horizontal = spacing.screen)) {
-                Row(Modifier.fillMaxWidth().then(dragModifier), verticalAlignment = Alignment.CenterVertically) {
-                    OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse, tint = Color.White)
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
-                            style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
-                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
-                    }
-                    OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
+        Column(Modifier.fillMaxSize()
+            .statusBarsPadding().navigationBarsPadding().padding(horizontal = spacing.screen)) {
+            Row(Modifier.fillMaxWidth().then(dragModifier), verticalAlignment = Alignment.CenterVertically) {
+                OndaraIconButton(OndaraIcons.ChevronDown, "Minimizar reproductor", onCollapse, tint = Color.White)
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
+                        style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
+                    PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
                 }
-                Spacer(Modifier.weight(1f).fillMaxWidth().then(dragModifier))
-                CinematicLyricBox(lyrics.currentLine)
-                Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
-                    Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
-                    with(sharedScope) {
-                        PlayerMetadata(song, Modifier.weight(1f).padding(horizontal = spacing.md)
-                            .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope), Color.White)
-                    }
-                    OndaraIconButton(OndaraIcons.Close, "No me interesa", { onEvent(PlayerEvent.NotInterested) }, tint = Color.White)
-                    OndaraIconButton(if (added) OndaraIcons.Check else OndaraIcons.Add,
-                        "Agregar a playlist", { panel = "Playlist" }, tint = Color.White)
-                }
-                Progress(state.player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, light = true)
-                with(sharedScope) {
-                    PlayerTransport(state.player, onEvent,
-                        Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
-                }
-                PlayerBottomActions(song, { panel = it }, Color.White)
-                LyricsHandle({ panel = "Letra" }, artworkUrl = song.thumbnailUrl)
-                Spacer(Modifier.height(spacing.lg))
+                OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
             }
+            Spacer(Modifier.weight(1f).fillMaxWidth().then(dragModifier))
+            CinematicLyricBox(lyrics.currentLine)
+            Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
+                with(sharedScope) {
+                    PlayerMetadata(song, Modifier.weight(1f).padding(horizontal = spacing.md)
+                        .sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope), Color.White)
+                }
+                OndaraIconButton(OndaraIcons.Close, "No me interesa", { onEvent(PlayerEvent.NotInterested) }, tint = Color.White)
+                OndaraIconButton(if (added) OndaraIcons.Check else OndaraIcons.Add,
+                    "Agregar a playlist", { panel = "Playlist" }, tint = Color.White)
+            }
+            Progress(state.player, positionFlow, { onEvent(PlayerEvent.SeekFraction(it)) }, light = true)
+            with(sharedScope) {
+                PlayerTransport(state.player, onEvent,
+                    Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
+            }
+            PlayerBottomActions(song, { panel = it }, Color.White)
+            LyricsHandle({ panel = "Letra" }, artworkUrl = song.thumbnailUrl)
+            Spacer(Modifier.height(spacing.lg))
         }
         if (panel == "Cola") QueuePanel(state.player, onEvent) { panel = "" }
         if (panel == "Letra") {
