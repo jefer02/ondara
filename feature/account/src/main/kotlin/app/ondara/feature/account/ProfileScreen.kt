@@ -18,33 +18,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.palette.graphics.Palette
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.HandDrawnIcons
 import app.ondara.core.designsystem.icon.Icon
 import app.ondara.core.designsystem.icon.OndaraIcons
-import app.ondara.core.designsystem.theme.ColorMath
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.model.Mood
 import app.ondara.core.ui.*
-import coil3.SingletonImageLoader
-import coil3.request.ImageRequest
-import coil3.request.SuccessResult
-import coil3.request.allowHardware
-import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -118,34 +107,10 @@ internal fun ProfileContent(
     }
 }
 
-/** Extrae hasta tres colores de portadas a 96 px fuera del hilo principal. O(k·96²), k ≤ 3. */
-@Composable
-private fun profilePalette(artworks: List<String>): List<Color> {
-    val context = LocalContext.current.applicationContext
-    val palette by produceState<List<Color>>(emptyList(), artworks) {
-        value = withContext(Dispatchers.IO) {
-            artworks.take(3).flatMap { url ->
-                runCatching {
-                    val request = ImageRequest.Builder(context).data(url.thumbnail(96)).size(96).allowHardware(false).build()
-                    val bitmap = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image?.toBitmap()
-                    bitmap?.let {
-                        val swatches = Palette.from(it).maximumColorCount(8).generate()
-                        listOfNotNull(swatches.dominantSwatch, swatches.lightMutedSwatch, swatches.darkMutedSwatch).map { swatch -> Color(swatch.rgb) }
-                    }.orEmpty()
-                }.getOrDefault(emptyList())
-            }.distinct().take(3)
-        }
-    }
-    return palette
-}
-
 @Composable
 private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Modifier = Modifier) {
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
-    val extracted = profilePalette(state.stats.topArtworks)
-    val palette = extracted.takeIf { it.size >= 2 } ?: listOf(colors.blockLight, colors.blockMuted)
-    val ordered = palette.sortedBy { ColorMath.luminance(it.toArgb()) }
     val face = when (state.stats.mood) {
         Mood.HAPPY -> HandDrawnIcons.FaceHappy
         Mood.CALM -> HandDrawnIcons.FaceCalm
@@ -178,32 +143,7 @@ private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Mo
                 Text(state.stats.topGenre ?: "Por descubrir", style = OndaraTheme.type.title, color = colors.onBlock)
             }
         }
-        Text("Tu paleta", style = OndaraTheme.type.caption)
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                palette.forEachIndexed { index, color ->
-                    val foreground = Color(ColorMath.ensureContrast(ColorMath.onColor(color.toArgb()), color.toArgb()))
-                    Box(
-                        Modifier.fillMaxWidth().height(spacing.touch * 1.6f).bentoMotion(index + 2)
-                            .clip(OndaraTheme.shapes.large).background(color).padding(spacing.lg), contentAlignment = Alignment.BottomStart,
-                    ) {
-                        Text(String.format(Locale.ROOT, "#%06X", color.toArgb() and 0xFFFFFF), style = OndaraTheme.type.code, color = foreground)
-                    }
-                }
-            }
-            Box(
-                Modifier.weight(1f).aspectRatio(1f).bentoMotion(5).clip(OndaraTheme.shapes.small).background(colors.blockLight)
-                    .semantics { contentDescription = state.stats.topArtist?.name ?: "Tu artista está por descubrir" },
-                contentAlignment = Alignment.Center,
-            ) {
-                val image = state.stats.topArtist?.thumbnailUrl
-                if (image != null) CompositionLocalProvider(LocalDitherArtwork provides false) {
-                    Artwork(image, Modifier.fillMaxSize().twoToneDither(ordered.first(), ordered.last(), cellDp = 2.5f))
-                }
-                else Icon(OndaraIcons.Wave, null, tint = colors.onBlock, size = 64.dp)
-            }
-        }
-        Row(Modifier.fillMaxWidth().bentoMotion(6), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+        Row(Modifier.fillMaxWidth().bentoMotion(2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
             Icon(HandDrawnIcons.Person, null, tint = colors.onMuted, size = spacing.touch)
             val joined = state.settings.joinedAtMs.takeIf { it > 0 } ?: state.firstPlay
             val date = remember(joined) { joined?.let { SimpleDateFormat("MMM yyyy", Locale.forLanguageTag("es")).format(Date(it)) } }
