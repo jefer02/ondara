@@ -2,9 +2,6 @@ package app.ondara.feature.account
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.graphics.BitmapFactory
-import android.os.Build
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import app.ondara.core.domain.*
@@ -16,7 +13,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class ProfileUiState(
@@ -28,6 +26,7 @@ data class ProfileUiState(
     val name: String = "",
     val loading: Boolean = true,
     val error: String? = null,
+    val photo: Bitmap? = null,
 )
 sealed interface ProfileEvent {
     data object Back : ProfileEvent
@@ -35,7 +34,11 @@ sealed interface ProfileEvent {
     data object CancelEdit : ProfileEvent
     data class Name(val value: String) : ProfileEvent
     data object SaveName : ProfileEvent
-    data class Avatar(val uri: Uri?) : ProfileEvent
+    data class Avatar(val uri: Uri) : ProfileEvent
+    data object CancelCrop : ProfileEvent
+    data class SavePhoto(val crop: PhotoCrop) : ProfileEvent
+    data class PixelEffect(val enabled: Boolean) : ProfileEvent
+    data class PixelBlocks(val blocks: Int) : ProfileEvent
     data object Initials : ProfileEvent
     data object Play : ProfileEvent
     data object Share : ProfileEvent
@@ -52,6 +55,8 @@ class ProfileViewModel @Inject constructor(
     private val player: PlayerController,
     @ApplicationContext private val context: Context,
 ) : MviViewModel<ProfileUiState, ProfileEvent, ProfileEffect>(ProfileUiState()) {
+    private val photoWrite = Mutex()
+
     init {
         viewModelScope.launch { settings.settings.collect { setState { copy(settings = it) } } }
         viewModelScope.launch { accounts.accounts.collect { setState { copy(accounts = it) } } }
@@ -72,46 +77,28 @@ class ProfileViewModel @Inject constructor(
                 settings.update { it.copy(profileName = state.value.name.trim()) }
                 setState { copy(editing = false) }
             }
-            is ProfileEvent.Avatar -> event.uri?.let { uri -> work {
-                val path = copyAvatar(uri)
-                settings.update { it.copy(avatarPath = path) }
-            } }
-            ProfileEvent.Initials -> work { settings.update { it.copy(avatarPath = "") } }
+            is ProfileEvent.Avatar -> work {
+                val photo = withContext(Dispatchers.IO) { decodeProfilePhoto(context, event.uri) }
+                setState { copy(photo = photo, error = null) }
+            }
+            ProfileEvent.CancelCrop -> setState { copy(photo = null) }
+            is ProfileEvent.SavePhoto -> {
+                val photo = state.value.photo ?: return
+                setState { copy(photo = null) }
+                work {
+                    photoWrite.withLock {
+                        val path = withContext(Dispatchers.IO) { saveProfilePhoto(context.filesDir, photo, event.crop) }
+                        settings.update { it.copy(avatarPath = path, avatarRevision = it.avatarRevision + 1) }
+                    }
+                }
+            }
+            is ProfileEvent.PixelEffect -> work { settings.update { it.copy(avatarPixelEffect = event.enabled) } }
+            is ProfileEvent.PixelBlocks -> work { settings.update { it.copy(avatarPixelBlocks = event.blocks) } }
+            ProfileEvent.Initials -> work { photoWrite.withLock { settings.update { it.copy(avatarPath = "") } } }
             ProfileEvent.Play -> state.value.stats.songOfTheDay?.let {
                 player.play(listOf(it), context = PlaybackContext("Perfil", "Canción del día"))
             }
             is ProfileEvent.Error -> setState { copy(error = event.message) }
-        }
-    }
-
-    /** Decodifica, centra y reduce a un cuadrado de 512 px. O(w·h) tiempo y memoria del bitmap reducido. */
-    private suspend fun copyAvatar(uri: Uri): String = withContext(Dispatchers.IO) {
-        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val scale = (512f / maxOf(info.size.width, info.size.height)).coerceAtMost(1f)
-            decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1), (info.size.height * scale).toInt().coerceAtLeast(1))
-        }
-        else {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, bounds) }
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 1024) inSampleSize *= 2
-            }
-            requireNotNull(context.contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, options) }) {
-                "No se pudo leer la foto"
-            }
-        }
-        val side = minOf(bitmap.width, bitmap.height)
-        val cropped = Bitmap.createBitmap(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side)
-        try {
-            val directory = File(context.filesDir, "profile").apply { mkdirs() }
-            val file = File(directory, "avatar_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { check(cropped.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
-            file.absolutePath
-        } finally {
-            if (cropped !== bitmap) cropped.recycle()
-            bitmap.recycle()
         }
     }
 

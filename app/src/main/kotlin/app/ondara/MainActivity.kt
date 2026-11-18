@@ -140,7 +140,7 @@ class AppViewModel @Inject constructor(
             haptics = prefs.haptics,
             nowPlaying = NowPlaying(songId, playing),
             artworkUrl = artwork,
-            profile = ProfileBadge(prefs.profileName, prefs.avatarPath, linked.anyConnected),
+            profile = ProfileBadge(prefs, linked.anyConnected),
             ditherArtwork = prefs.ditherArtwork,
             onboardingDone = prefs.onboardingDone,
         )

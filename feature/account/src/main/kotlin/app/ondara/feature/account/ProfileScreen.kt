@@ -24,6 +24,9 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -52,7 +55,7 @@ fun ProfileScreen(
     val event = viewModel::onEvent
     val layer = rememberGraphicsLayer()
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { event(ProfileEvent.Avatar(it)) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { event(ProfileEvent.Avatar(it)) } }
     CollectEffects(viewModel.effects) { effect ->
         when (effect) {
             ProfileEffect.Back -> onNavigate(Nav.Back)
@@ -94,21 +97,34 @@ internal fun ProfileContent(
     }) {
         item(key = "bento", contentType = "perfil") {
             if (state.loading) Skeleton(Modifier.fillMaxWidth().height(OndaraTheme.spacing.touch * 8))
-            else ProfileBento(state, { event(ProfileEvent.Play) }, bentoModifier)
+            else ProfileBento(state, { event(ProfileEvent.Play) }, onChooseAvatar, { event(ProfileEvent.Edit) }, bentoModifier)
         }
         item(key = "error", contentType = "error") { ErrorMessage(state.error) }
     }
-    if (state.editing) OndaraDialog("Editar perfil", { event(ProfileEvent.CancelEdit) }, "Guardar", { event(ProfileEvent.SaveName) }) {
+    if (state.editing && state.photo == null) OndaraDialog("Editar perfil", { event(ProfileEvent.CancelEdit) }, "Guardar", { event(ProfileEvent.SaveName) }) {
         OndaraTextField(state.name, { event(ProfileEvent.Name(it)) }, placeholder = "Nombre")
-        Avatar(state.settings.profileName, state.settings.avatarPath, size = 64.dp)
-        OndaraButton("Elegir foto", { onChooseAvatar() })
+        Avatar(ProfileBadge(state.settings), Modifier.pressable(onClickLabel = "Cambiar foto", onClick = onChooseAvatar), size = 64.dp)
+        OndaraButton("Cambiar foto", onChooseAvatar)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Efecto píxel")
+            OndaraSwitch(state.settings.avatarPixelEffect, { event(ProfileEvent.PixelEffect(it)) },
+                Modifier.semantics { contentDescription = "Efecto píxel" })
+        }
+        if (state.settings.avatarPixelEffect) {
+            Text("Tamaño del píxel · ${state.settings.avatarPixelBlocks}")
+            OndaraValueSlider(state.settings.avatarPixelBlocks.toFloat(), { event(ProfileEvent.PixelBlocks(it.roundToInt())) },
+                32f..64f, steps = 2, description = "Tamaño del píxel")
+        }
         OndaraButton("Usar iniciales", { event(ProfileEvent.Initials) }, style = ButtonStyle.GHOST)
         ErrorMessage(state.error)
     }
+    state.photo?.let { CropProfilePhoto(it, { event(ProfileEvent.CancelCrop) }, { crop -> event(ProfileEvent.SavePhoto(crop)) }) }
 }
 
 @Composable
-private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+private fun ProfileBento(
+    state: ProfileUiState, onPlay: () -> Unit, onChooseAvatar: () -> Unit, onAddName: () -> Unit, modifier: Modifier = Modifier,
+) {
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
     val face = when (state.stats.mood) {
@@ -123,15 +139,22 @@ private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Mo
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
         Row(Modifier.fillMaxWidth().bentoMotion(0), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
-            Text(state.settings.profileName.ifBlank { "Tu perfil" }, Modifier.weight(1f), style = OndaraTheme.type.display, maxLines = 2)
-            Column(Modifier.weight(1.4f).pressable(enabled = state.stats.songOfTheDay != null, onClick = onPlay).heightIn(min = spacing.touch)) {
+            Avatar(ProfileBadge(state.settings), Modifier.pressable(onClickLabel = "Cambiar foto", onClick = onChooseAvatar)
+                .semantics { contentDescription = "Cambiar foto" }, size = spacing.touch * 2)
+            Column(Modifier.weight(1f)) {
+                Text(state.settings.profileName.ifBlank { "Tu perfil" }, style = OndaraTheme.type.display, maxLines = 2)
+                if (state.settings.profileName.isBlank()) {
+                    OndaraButton("Agregar nombre", onAddName, style = ButtonStyle.GHOST)
+                }
+            }
+            Icon(face, "Ánimo: ${moodLabel(state.stats.mood)}", size = spacing.touch)
+        }
+        Column(Modifier.fillMaxWidth().bentoMotion(1).pressable(enabled = state.stats.songOfTheDay != null, onClick = onPlay).heightIn(min = spacing.touch)) {
                 Text("Canción del día", style = OndaraTheme.type.caption)
                 Text(state.stats.songOfTheDay?.title ?: "Tu próxima favorita", style = OndaraTheme.type.title, maxLines = 3)
-            }
-            Icon(face, "Ánimo: ${moodLabel(state.stats.mood)}", size = 64.dp)
         }
         Row(
-            Modifier.fillMaxWidth().bentoMotion(1).clip(OndaraTheme.shapes.large).background(colors.blockPrimary).padding(spacing.xl),
+            Modifier.fillMaxWidth().bentoMotion(2).clip(OndaraTheme.shapes.large).background(colors.blockPrimary).padding(spacing.xl),
             horizontalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Column(Modifier.weight(1f)) {
@@ -143,7 +166,7 @@ private fun ProfileBento(state: ProfileUiState, onPlay: () -> Unit, modifier: Mo
                 Text(state.stats.topGenre ?: "Por descubrir", style = OndaraTheme.type.title, color = colors.onBlock)
             }
         }
-        Row(Modifier.fillMaxWidth().bentoMotion(2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+        Row(Modifier.fillMaxWidth().bentoMotion(3), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
             Icon(HandDrawnIcons.Person, null, tint = colors.onMuted, size = spacing.touch)
             val joined = state.settings.joinedAtMs.takeIf { it > 0 } ?: state.firstPlay
             val date = remember(joined) { joined?.let { SimpleDateFormat("MMM yyyy", Locale.forLanguageTag("es")).format(Date(it)) } }

@@ -31,6 +31,7 @@ data class ArtworkPalette(val dominant: Color, val vibrant: Color, val muted: Co
 
 val LocalThemeSpec = staticCompositionLocalOf<ThemeSpec> { error("OndaraTheme no está en la composición") }
 val LocalOndaraColors = staticCompositionLocalOf<OndaraColors> { error("OndaraTheme no está en la composición") }
+private val LocalTargetColors = staticCompositionLocalOf<OndaraColors?> { null }
 val LocalOndaraTypography = staticCompositionLocalOf<OndaraTypography> { error("OndaraTheme no está en la composición") }
 val LocalOndaraShapes = staticCompositionLocalOf<OndaraShapes> { error("OndaraTheme no está en la composición") }
 val LocalOndaraMotion = staticCompositionLocalOf<OndaraMotion> { error("OndaraTheme no está en la composición") }
@@ -49,6 +50,9 @@ val LocalAudioAmplitude = staticCompositionLocalOf<() -> Float> { { 0f } }
 object OndaraTheme {
     val spec: ThemeSpec @Composable @ReadOnlyComposable get() = LocalThemeSpec.current
     val colors: OndaraColors @Composable @ReadOnlyComposable get() = LocalOndaraColors.current
+
+    /** Colores finales para recursos rasterizados que se generan fuera del hilo principal. */
+    val targetColors: OndaraColors @Composable @ReadOnlyComposable get() = LocalTargetColors.current ?: colors
     val type: OndaraTypography @Composable @ReadOnlyComposable get() = LocalOndaraTypography.current
     val shapes: OndaraShapes @Composable @ReadOnlyComposable get() = LocalOndaraShapes.current
     val motion: OndaraMotion @Composable @ReadOnlyComposable get() = LocalOndaraMotion.current
@@ -94,6 +98,7 @@ fun OndaraTheme(
     CompositionLocalProvider(
         LocalThemeSpec provides spec,
         LocalOndaraColors provides colors,
+        LocalTargetColors provides target,
         LocalOndaraTypography provides typography,
         LocalOndaraShapes provides shapes,
         LocalOndaraMotion provides motion,

@@ -46,7 +46,7 @@ fun AccountSheetContent(
         verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md)) {
-            Avatar(state.settings.profileName, state.settings.avatarPath, size = 64.dp)
+            Avatar(ProfileBadge(state.settings), size = 64.dp)
             Column {
                 Text(state.settings.profileName.ifBlank { "Tu perfil" }, style = OndaraTheme.type.title)
                 OndaraButton("Ver perfil", { event(AccountEvent.Navigate(Nav.Profile)) }, style = ButtonStyle.GHOST)
