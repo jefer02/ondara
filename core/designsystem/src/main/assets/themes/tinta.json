@@ -1,0 +1,68 @@
+{
+  "id": "tinta",
+  "name": "Tinta",
+  "description": "Azul tinta, lavanda mate y bloques bento con portadas tramadas.",
+  "colors": {
+    "mode": "DARK",
+    "dynamic": false,
+    "dark": {
+      "background": "#06080F",
+      "surface": "#1A1A1F",
+      "surfaceHigh": "#2B2D3A",
+      "onBackground": "#B4B7C9",
+      "onMuted": "#8E93AB",
+      "accent": "#E9EAFF",
+      "onAccent": "#0D1030",
+      "outline": "#50556B",
+      "error": "#FF8A8F",
+      "blockPrimary": "#B4B7C9",
+      "blockLight": "#E9EAFF",
+      "blockMuted": "#50556B",
+      "onBlock": "#0D1030"
+    }
+  },
+  "typography": {
+    "display": "ROUNDED",
+    "body": "NUNITO",
+    "mono": "MONO",
+    "displayWeight": 600,
+    "titleWeight": 600,
+    "bodyWeight": 500,
+    "scale": 1.0,
+    "displayTracking": 0.0,
+    "uppercaseLabels": false
+  },
+  "shapes": {
+    "small": 14,
+    "medium": 24,
+    "large": 28,
+    "artwork": 22,
+    "squircle": false,
+    "pillControls": true
+  },
+  "materials": {
+    "blur": 0,
+    "surfaceOpacity": 1.0,
+    "saturation": 1.0,
+    "hairline": true,
+    "noise": 0.0
+  },
+  "motion": {
+    "stiffness": 260,
+    "dampingRatio": 0.95,
+    "fastMs": 140,
+    "mediumMs": 280,
+    "slowMs": 460,
+    "pressScale": 0.98,
+    "staggerMs": 40
+  },
+  "playerLayout": "BENTO",
+  "navigation": "FLOATING_GLASS_PILL",
+  "background": "SOLID",
+  "list": "PLAIN",
+  "largeTitles": true,
+  "accentPulse": false,
+  "grain": 0.0,
+  "icons": "HAND_DRAWN",
+  "ditherArtwork": true
+}

@@ -85,14 +85,23 @@ internal fun FullPlayer(
     positionFlow: Flow<Long>,
     onCollapse: () -> Unit,
     onNavigate: (Nav) -> Unit,
-    lyrics: @Composable (Modifier) -> Unit,
+    lyrics: LyricsSlots,
     sharedScope: SharedTransitionScope,
     visibilityScope: AnimatedVisibilityScope,
     dragModifier: Modifier,
+    active: Boolean,
 ) {
     val player = state.player
     val song = player.current ?: return
-    val layout = OndaraTheme.spec.playerLayout
+    val layout = resolvePlayerLayout(state.settings.playerLayout, OndaraTheme.spec.playerLayout)
+    if (layout == PlayerLayout.CINEMATIC) {
+        CinematicPlayerLayout(state, onEvent, positionFlow, onCollapse, onNavigate, lyrics, sharedScope, visibilityScope, dragModifier, active)
+        return
+    }
+    if (layout == PlayerLayout.BENTO) {
+        BentoPlayerLayout(state, onEvent, positionFlow, onCollapse, onNavigate, lyrics, sharedScope, visibilityScope, dragModifier)
+        return
+    }
     val colors = OndaraTheme.colors
     val spacing = OndaraTheme.spacing
     val motion = OndaraTheme.motion
@@ -122,7 +131,7 @@ internal fun FullPlayer(
                 label = "playerCenter",
             ) { lyricsMode ->
                 if (lyricsMode) {
-                    lyrics(Modifier.fillMaxSize())
+                    lyrics.full(Modifier.fillMaxSize())
                 } else {
                     Box(Modifier.fillMaxSize().then(dragModifier), contentAlignment = Alignment.Center) {
                         with(sharedScope) {
@@ -131,6 +140,7 @@ internal fun FullPlayer(
                                 PlayerLayout.ARTWORK_HERO -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 28)
                                 PlayerLayout.IMMERSIVE -> HeroArtwork(song, player.isPlaying, shared, edgePadding = 20)
                                 PlayerLayout.VINYL -> VinylArtwork(song, player.isPlaying, shared)
+                                PlayerLayout.CINEMATIC, PlayerLayout.BENTO -> Unit
                                 PlayerLayout.MINIMAL -> MinimalArtwork(song, positionFlow, player, shared)
                             }
                         }
@@ -249,7 +259,7 @@ private fun PlayerBackdrop(layout: PlayerLayout, song: Song) {
         PlayerLayout.VINYL -> Box(
             Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(colors.surfaceHigh, colors.background))),
         )
-        PlayerLayout.MINIMAL -> Unit
+        PlayerLayout.MINIMAL, PlayerLayout.CINEMATIC, PlayerLayout.BENTO -> Unit
     }
 }
 
@@ -354,19 +364,20 @@ private fun MinimalArtwork(song: Song, positionFlow: Flow<Long>, player: PlayerS
 }
 
 @Composable
-private fun Progress(player: PlayerState, positionFlow: Flow<Long>, onSeek: (Float) -> Unit, modifier: Modifier = Modifier) {
+internal fun Progress(player: PlayerState, positionFlow: Flow<Long>, onSeek: (Float) -> Unit, modifier: Modifier = Modifier, light: Boolean = false, foreground: Color = OndaraTheme.colors.onMuted) {
     val position by positionFlow.collectAsStateWithLifecycle(0L)
     var scrub by remember { mutableStateOf<Float?>(null) }
     val duration = player.durationMs
     val fraction = if (duration > 0) position.toFloat() / duration else 0f
     Column(modifier.fillMaxWidth()) {
-        OndaraSlider(fraction, onSeek, onScrub = { scrub = it }, description = "Posición de reproducción")
+        OndaraSlider(fraction, onSeek, activeColor = if (light) Color.White else foreground,
+            trackColor = if (light) Color.White.copy(alpha = .3f) else foreground.copy(alpha = .18f), onScrub = { scrub = it }, description = "Posición de reproducción")
         Row(Modifier.fillMaxWidth()) {
-            Text(formatPosition(scrub?.let { (it * duration).toLong() } ?: position), style = OndaraTheme.type.mono, color = OndaraTheme.colors.onMuted)
+            Text(formatPosition(scrub?.let { (it * duration).toLong() } ?: position), style = OndaraTheme.type.mono, color = if (light) Color.White else foreground)
             Spacer(Modifier.weight(1f))
             if (player.isBuffering) Label("Cargando…", color = OndaraTheme.colors.accent) else player.error?.let { Label(it, color = OndaraTheme.colors.error) }
             Spacer(Modifier.weight(1f))
-            Text(formatPosition(duration), style = OndaraTheme.type.mono, color = OndaraTheme.colors.onMuted)
+            Text(formatPosition(duration), style = OndaraTheme.type.mono, color = if (light) Color.White else foreground)
         }
     }
 }

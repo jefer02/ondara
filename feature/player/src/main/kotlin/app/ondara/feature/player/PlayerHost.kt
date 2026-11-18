@@ -13,7 +13,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -42,12 +50,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ondara.core.designsystem.component.GlassSurface
-import app.ondara.core.designsystem.component.LocalStartInset
 import app.ondara.core.designsystem.component.OndaraIconButton
 import app.ondara.core.designsystem.component.Text
 import app.ondara.core.designsystem.component.pressable
@@ -64,7 +70,14 @@ internal const val KEY_TITLE = "player-title"
 internal const val KEY_PLAY = "player-play"
 
 /** Alto del mini-reproductor, para que `:app` calcule el inset inferior de las listas. */
-val MiniPlayerHeight = 64.dp
+val MiniPlayerHeight = 56.dp
+
+/** Ranuras de letra que inyecta :app desde :feature:lyrics. */
+class LyricsSlots(
+    val full: @Composable (Modifier) -> Unit,
+    val currentLine: @Composable (Modifier) -> Unit,
+    val preview: @Composable (Modifier) -> Unit,
+)
 
 /**
  * Mini-reproductor ↔ reproductor completo con `SharedTransitionLayout`.
@@ -80,9 +93,9 @@ val MiniPlayerHeight = 64.dp
 fun PlayerHost(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    miniBottomPadding: Dp,
+    miniPadding: PaddingValues,
     onNavigate: (Nav) -> Unit,
-    lyrics: @Composable (Modifier) -> Unit,
+    lyrics: LyricsSlots,
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
@@ -108,22 +121,33 @@ fun PlayerHost(
 
     // Gesto compartido por ambos estados: arrastrar hacia arriba expande, hacia abajo colapsa.
     val dragModifier = Modifier.pointerInput(Unit) {
-        detectVerticalDragGestures(
-            onDragStart = { dragFraction = 0f },
-            onDragEnd = {
-                val target = if (dragFraction > 0.22f) !currentExpanded else currentExpanded
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            dragFraction = 0f
+            fun move(amount: Float) {
+                val delta = if (currentExpanded) amount else -amount
+                dragFraction = (dragFraction + delta / (screenHeight * 0.7f)).coerceIn(0f, 1f)
+                scope.launch { seekable.seekTo(dragFraction, targetState = !currentExpanded) }
+            }
+            val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
+                // El gesto opuesto queda disponible para el scroll del reproductor completo.
+                if ((currentExpanded && overSlop > 0f) || (!currentExpanded && overSlop < 0f)) {
+                    change.consume()
+                    move(overSlop)
+                }
+            }
+            if (start != null) {
+                val completed = verticalDrag(start.id) { change ->
+                    move(change.positionChange().y)
+                    change.consume()
+                }
+                val target = if (completed && dragFraction > 0.22f) !currentExpanded else currentExpanded
                 if (target != currentExpanded) haptics.edge()
                 scope.launch {
                     seekable.animateTo(target, if (motion.reduced) tween(150) else spring(0.85f, motion.stiffness * 0.7f))
                 }
                 onExpandedChange(target)
-            },
-            onDragCancel = { scope.launch { seekable.animateTo(currentExpanded) } },
-        ) { change, amount ->
-            change.consume()
-            val delta = if (currentExpanded) amount else -amount
-            dragFraction = (dragFraction + delta / (screenHeight * 0.7f)).coerceIn(0f, 1f)
-            scope.launch { seekable.seekTo(dragFraction, targetState = !currentExpanded) }
+            }
         }
     }
 
@@ -144,9 +168,10 @@ fun PlayerHost(
                     sharedScope = this@SharedTransitionLayout,
                     visibilityScope = this,
                     dragModifier = dragModifier,
+                    active = expanded,
                 )
             } else {
-                Box(Modifier.fillMaxSize().padding(start = LocalStartInset.current), contentAlignment = Alignment.BottomCenter) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
                     MiniPlayer(
                         player = player,
                         positionMs = viewModel::positionMs,
@@ -155,7 +180,7 @@ fun PlayerHost(
                         onExpand = { onExpandedChange(true) },
                         sharedScope = this@SharedTransitionLayout,
                         visibilityScope = this@AnimatedContent,
-                        modifier = Modifier.padding(bottom = miniBottomPadding).then(dragModifier),
+                        modifier = Modifier.padding(miniPadding).then(dragModifier),
                     )
                 }
             }
@@ -181,41 +206,45 @@ private fun MiniPlayer(
     LaunchedEffect(player.durationMs) {
         while (true) withFrameMillis { progress = if (player.durationMs > 0) positionMs().toFloat() / player.durationMs else 0f }
     }
-    with(sharedScope) {
-        GlassSurface(
-            modifier
-                .padding(horizontal = OndaraTheme.spacing.md)
-                .fillMaxWidth()
-                .height(MiniPlayerHeight)
-                .pressable(onClickLabel = "Abrir reproductor", onClick = onExpand)
-                .semantics { contentDescription = "Reproduciendo ${song.title} de ${song.artistLine}" }
-                .drawWithContent {
-                    drawContent()
-                    // Progreso fino en el borde inferior, pintado sin recomponer.
-                    drawRect(colors.accent, Offset(0f, size.height - 2.dp.toPx()), Size(size.width * progress.coerceIn(0f, 1f), 2.dp.toPx()))
-                },
-            shape = OndaraTheme.shapes.medium,
-        ) {
-            Row(Modifier.fillMaxSize().padding(start = OndaraTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                Artwork(
-                    song.thumbnailUrl,
-                    Modifier.size(46.dp).sharedElement(rememberSharedContentState(KEY_ARTWORK), visibilityScope),
-                    shape = OndaraTheme.shapes.small,
-                    sizePx = 544,
-                )
-                Spacer(Modifier.width(OndaraTheme.spacing.md))
-                Column(Modifier.weight(1f).sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope)) {
-                    Text(song.title, style = OndaraTheme.type.bodyStrong, maxLines = 1)
-                    Text(song.artistLine, style = OndaraTheme.type.caption, color = colors.onMuted, maxLines = 1)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val showNext = maxWidth >= 220.dp
+        with(sharedScope) {
+            GlassSurface(
+                Modifier
+                    .fillMaxWidth()
+                    .height(MiniPlayerHeight)
+                    .clip(CircleShape)
+                    .pressable(onClickLabel = "Abrir reproductor", onClick = onExpand)
+                    .semantics { contentDescription = "Reproduciendo ${song.title} de ${song.artistLine}" }
+                    .drawWithContent {
+                        drawContent()
+                        // Progreso fino en el borde inferior, pintado sin recomponer.
+                        drawRect(colors.accent, Offset(0f, size.height - 2.dp.toPx()), Size(size.width * progress.coerceIn(0f, 1f), 2.dp.toPx()))
+                    },
+                shape = CircleShape,
+            ) {
+                Row(Modifier.fillMaxSize().padding(start = OndaraTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                    Artwork(
+                        song.thumbnailUrl,
+                        Modifier.size(40.dp).sharedElement(rememberSharedContentState(KEY_ARTWORK), visibilityScope),
+                        shape = CircleShape,
+                        playing = true,
+                        sizePx = 544,
+                    )
+                    Spacer(Modifier.width(OndaraTheme.spacing.md))
+                    Column(Modifier.weight(1f).sharedBounds(rememberSharedContentState(KEY_TITLE), visibilityScope)) {
+                        Text(song.title, style = OndaraTheme.type.bodyStrong, maxLines = 1)
+                        Text(song.artistLine, style = OndaraTheme.type.caption, color = colors.onMuted, maxLines = 1)
+                    }
+                    OndaraIconButton(
+                        if (player.isPlaying) OndaraIcons.Pause else OndaraIcons.Play,
+                        if (player.isPlaying) "Pausar" else "Reproducir",
+                        onToggle,
+                        Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope),
+                        haptic = true,
+                    )
+                    if (showNext) OndaraIconButton(OndaraIcons.Next, "Siguiente", onNext, enabled = player.hasNext, haptic = true)
                 }
-                OndaraIconButton(
-                    if (player.isPlaying) OndaraIcons.Pause else OndaraIcons.Play,
-                    if (player.isPlaying) "Pausar" else "Reproducir",
-                    onToggle,
-                    Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope),
-                    haptic = true,
-                )
-                OndaraIconButton(OndaraIcons.Next, "Siguiente", onNext, enabled = player.hasNext, haptic = true)
             }
         }
     }

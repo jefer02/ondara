@@ -30,6 +30,12 @@ data class OndaraColors(
     val outline: Color,
     val error: Color,
     val isDark: Boolean,
+    /** Bloques de las composiciones *bento*: primario, claro y apagado, con su texto. */
+    val blockPrimary: Color = accent,
+    val blockLight: Color = onBackground,
+    val blockMuted: Color = surfaceHigh,
+    val onBlock: Color = background,
+    val onBlockMuted: Color = onBackground,
 ) {
     /** Velo para superponer sobre imágenes y que el texto siga siendo legible. */
     val scrim: Color get() = background.copy(alpha = 0.72f)
@@ -37,11 +43,18 @@ data class OndaraColors(
 
 fun Palette.toColors(): OndaraColors {
     fun c(hex: String) = Color(ColorMath.parseHex(hex))
+    val primary = ColorMath.parseHex(blockPrimary ?: accent)
+    val light = ColorMath.parseHex(blockLight ?: onBackground)
+    val muted = ColorMath.parseHex(blockMuted ?: surfaceHigh)
+    // El texto de los bloques se fuerza a AA contra el bloque menos favorable.
+    val ink = ColorMath.parseHex(onBlock ?: background).let { ColorMath.ensureContrast(ColorMath.ensureContrast(it, primary), light) }
     return OndaraColors(
         background = c(background), surface = c(surface), surfaceHigh = c(surfaceHigh),
         onBackground = c(onBackground), onMuted = c(onMuted), accent = c(accent), onAccent = c(onAccent),
         outline = c(outline), error = c(error),
         isDark = ColorMath.luminance(ColorMath.parseHex(background)) < 0.4,
+        blockPrimary = Color(primary), blockLight = Color(light), blockMuted = Color(muted),
+        onBlock = Color(ink), onBlockMuted = Color(ColorMath.ensureContrast(light, muted)),
     )
 }
 
@@ -60,6 +73,10 @@ data class OndaraTypography(
     val monoLarge: TextStyle,
     val lyric: TextStyle,
     val uppercaseLabels: Boolean,
+    /** Título grande de las pestañas (colapsa a [headline] al hacer scroll). */
+    val largeTitle: TextStyle = hero,
+    /** Códigos (hex, ids): siempre monoespaciada legible, también en el tema de matriz de puntos. */
+    val code: TextStyle = mono,
 )
 
 internal fun TypographyTokens.resolve(): OndaraTypography {
@@ -75,6 +92,7 @@ internal fun TypographyTokens.resolve(): OndaraTypography {
     )
     // La fuente de matriz de puntos y la ancha ocupan más: se compensan para que la jerarquía no reviente líneas.
     val wide = if (display == FontToken.WIDE || display == FontToken.DOT) 0.84f else 1f
+    val monoFont = if (mono == FontToken.DOT) fontFamily(FontToken.MONO) else monoFamily
     return OndaraTypography(
         hero = style(displayFamily, 40 * wide, 44 * wide, displayWeight, displayTracking),
         display = style(displayFamily, 30 * wide, 35 * wide, displayWeight, displayTracking),
@@ -88,6 +106,8 @@ internal fun TypographyTokens.resolve(): OndaraTypography {
         monoLarge = style(monoFamily, if (mono == FontToken.DOT) 30f else 24f, 32f, if (mono == FontToken.DOT) 900 else 500),
         lyric = style(displayFamily, 26 * wide, 34 * wide, displayWeight, displayTracking),
         uppercaseLabels = uppercaseLabels,
+        largeTitle = style(displayFamily, 34 * wide, 40 * wide, (displayWeight + 100).coerceAtMost(900), displayTracking),
+        code = style(monoFont, 14f, 18f, 600, 0.02f),
     )
 }
 

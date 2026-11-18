@@ -4,6 +4,7 @@ import app.ondara.core.model.AlbumPage
 import app.ondara.core.model.ArtistPage
 import app.ondara.core.model.HomeShelf
 import app.ondara.core.model.MoodCategory
+import app.ondara.core.model.Playlist
 import app.ondara.core.model.PlaylistPage
 import app.ondara.core.model.SearchFilter
 import app.ondara.core.model.SearchPage
@@ -12,11 +13,14 @@ import app.ondara.core.network.findAll
 import app.ondara.core.network.string
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -36,6 +40,9 @@ data class YouTubeClient(
     val androidSdk: Int? = null,
 ) {
     companion object {
+        /** Tope de páginas de la biblioteca: evita bucles si el servidor devolviera tokens sin fin. */
+        private const val MAX_LIBRARY_PAGES = 50
+
         val WEB_REMIX = YouTubeClient(
             name = "WEB_REMIX", version = "1.20261101.01.00", id = "67",
             userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
@@ -162,13 +169,91 @@ class InnerTubeClient(
         put("racyCheckOk", true)
     }
 
+    // ---- Cuenta (requieren cookie de sesión) ----------------------------------------------------
+
+    /**
+     * Datos de la cuenta con sesión (endpoint `account/account_menu`), o null si la cookie no es válida
+     * o no hay sesión. No lanza por 401/403.
+     */
+    suspend fun accountInfo(): YouTubeAccountInfo? = accountInfoWith(config().cookie)
+
+    /** Igual que [accountInfo] pero con una cookie explícita (para validar una cuenta recién añadida sin activarla). */
+    suspend fun accountInfo(cookie: String): YouTubeAccountInfo? = accountInfoWith(cookie)
+
+    private suspend fun accountInfoWith(cookie: String): YouTubeAccountInfo? {
+        if (cookie.isBlank()) return null
+        return try {
+            InnerTubeParser.accountInfo(call("account/account_menu", cookie = cookie) {})
+        } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.Unauthorized || e.response.status == HttpStatusCode.Forbidden) null else throw e
+        }
+    }
+
+    /**
+     * Playlists de la biblioteca del usuario (browseId `FEmusic_liked_playlists`), siguiendo continuaciones.
+     * Excluye las entradas que no son playlists ("Nueva playlist"). Los ids van sin prefijo `VL`.
+     *
+     * O(n) sobre el total de playlists; como mucho [MAX_LIBRARY_PAGES] peticiones.
+     */
+    suspend fun libraryPlaylists(): List<Playlist> {
+        var page = InnerTubeParser.libraryPlaylists(call("browse") { put("browseId", "FEmusic_liked_playlists") })
+        val playlists = LinkedHashMap<String, Playlist>()
+        page.first.forEach { playlists.putIfAbsent(it.id, it) }
+        val seen = HashSet<String>()
+        var pages = 1
+        var token = page.second
+        // `seen` corta un posible bucle si el servidor repitiera el mismo token.
+        while (token != null && seen.add(token) && pages++ < MAX_LIBRARY_PAGES) {
+            page = InnerTubeParser.libraryPlaylists(call("browse", continuation = token) {})
+            page.first.forEach { playlists.putIfAbsent(it.id, it) }
+            token = page.second
+        }
+        return playlists.values.toList()
+    }
+
+    /** "Me gusta" de la cuenta (playlist `LM`), hasta [maxSongs]. */
+    suspend fun likedSongs(maxSongs: Int = 2000): List<Song> = playlist("LM", maxSongs).songs.take(maxSongs)
+
+    /** Historial de reproducción de la cuenta (browseId `FEmusic_history`). */
+    suspend fun accountHistory(): List<Song> = InnerTubeParser.history(call("browse") { put("browseId", "FEmusic_history") })
+
+    /**
+     * Marca o quita el "Me gusta" de un vídeo (`like/like` y `like/removelike`, body `{"target":{"videoId":…}}`).
+     *
+     * @return true si el servidor respondió OK; false si rechazó la petición (p. ej. 401 sin sesión).
+     */
+    suspend fun rate(videoId: String, status: LikeStatus): Boolean {
+        val endpoint = when (status) {
+            LikeStatus.LIKE -> "like/like"
+            LikeStatus.INDIFFERENT -> "like/removelike"
+        }
+        return try {
+            call(endpoint) { putJsonObject("target") { put("videoId", videoId) } }
+            true
+        } catch (_: ResponseException) {
+            false
+        }
+    }
+
+    // ---- Novedades (públicos) ----------------------------------------------------------------------
+
+    /** Lanzamientos nuevos (browseId `FEmusic_new_releases`), público, como estanterías. */
+    suspend fun newReleases(): List<HomeShelf> =
+        InnerTubeParser.newReleases(call("browse") { put("browseId", "FEmusic_new_releases") })
+
+    /** Página Explorar (browseId `FEmusic_explore`): nuevos lanzamientos, tendencias, vídeos; público. */
+    suspend fun explore(): List<HomeShelf> = InnerTubeParser.shelves(call("browse") { put("browseId", "FEmusic_explore") })
+
+    /** [cookie] distinto de null fuerza la sesión de esta llamada en vez de la de [config]. */
     private suspend fun call(
         endpoint: String,
         client: YouTubeClient = YouTubeClient.WEB_REMIX,
         continuation: String? = null,
+        cookie: String? = null,
         body: JsonObjectBuilder.() -> Unit,
     ): JsonObject {
         val cfg = config()
+        val session = cookie ?: cfg.cookie
         val payload = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
@@ -197,9 +282,11 @@ class InnerTubeClient(
             header("Origin", client.host)
             header("Referer", client.host + "/")
             // La sesión solo viaja con el cliente web: es el único que acepta cookies.
-            if (cfg.cookie.isNotBlank() && client == YouTubeClient.WEB_REMIX) {
-                header("Cookie", cfg.cookie)
-                sapisidHash(cfg.cookie, client.host)?.let { header("Authorization", it) }
+            if (session.isNotBlank() && client == YouTubeClient.WEB_REMIX) {
+                header("Cookie", session)
+                sapisidHash(session, client.host)?.let { header("Authorization", it) }
+                header("X-Goog-AuthUser", "0")
+                header("X-Origin", client.host)
             }
             setBody(payload)
         }.body()
@@ -214,6 +301,9 @@ class InnerTubeClient(
     }
 
     companion object {
+        /** Tope de páginas de la biblioteca: evita bucles si el servidor devolviera tokens sin fin. */
+        private const val MAX_LIBRARY_PAGES = 50
+
         /** Cabecera `Authorization: SAPISIDHASH …` que YouTube exige junto a la cookie de sesión. */
         fun sapisidHash(cookie: String, origin: String, nowSec: Long = System.currentTimeMillis() / 1000): String? {
             val sapisid = cookie.split(';').map { it.trim() }

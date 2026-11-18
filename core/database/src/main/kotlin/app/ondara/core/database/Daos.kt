@@ -31,10 +31,10 @@ abstract class LibraryDao {
     // ---- Playlists ----
     @Query(
         """
-        SELECT p.id, p.name, p.createdAt,
+        SELECT p.id, p.name, p.createdAt, p.source, p.remoteId, p.author,
                (SELECT COUNT(*) FROM playlist_songs ps WHERE ps.playlistId = p.id) AS songCount,
-               (SELECT s.thumbnailUrl FROM playlist_songs ps JOIN songs s ON s.id = ps.songId
-                 WHERE ps.playlistId = p.id ORDER BY ps.position LIMIT 1) AS thumbnailUrl
+               COALESCE(p.thumbnailUrl, (SELECT s.thumbnailUrl FROM playlist_songs ps JOIN songs s ON s.id = ps.songId
+                 WHERE ps.playlistId = p.id ORDER BY ps.position LIMIT 1)) AS thumbnailUrl
         FROM playlists p ORDER BY p.createdAt DESC
         """,
     )
@@ -42,10 +42,10 @@ abstract class LibraryDao {
 
     @Query(
         """
-        SELECT p.id, p.name, p.createdAt,
+        SELECT p.id, p.name, p.createdAt, p.source, p.remoteId, p.author,
                (SELECT COUNT(*) FROM playlist_songs ps WHERE ps.playlistId = p.id) AS songCount,
-               (SELECT s.thumbnailUrl FROM playlist_songs ps JOIN songs s ON s.id = ps.songId
-                 WHERE ps.playlistId = p.id ORDER BY ps.position LIMIT 1) AS thumbnailUrl
+               COALESCE(p.thumbnailUrl, (SELECT s.thumbnailUrl FROM playlist_songs ps JOIN songs s ON s.id = ps.songId
+                 WHERE ps.playlistId = p.id ORDER BY ps.position LIMIT 1)) AS thumbnailUrl
         FROM playlists p WHERE p.id = :id
         """,
     )
@@ -108,6 +108,51 @@ abstract class LibraryDao {
 
     @Query("DELETE FROM search_history WHERE `query` = :query") abstract suspend fun removeSearch(query: String)
 
+    // ---- v2: fijados, guardados, recientes y estadísticas ----
+    @Query("SELECT * FROM pins ORDER BY pinnedAt DESC") abstract fun pins(): Flow<List<PinEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM pins WHERE `key` = :key)") abstract fun isPinned(key: String): Flow<Boolean>
+
+    @Query("SELECT COUNT(*) FROM pins") abstract suspend fun pinCount(): Int
+
+    @Query("SELECT EXISTS(SELECT 1 FROM pins WHERE `key` = :key)") abstract suspend fun isPinnedNow(key: String): Boolean
+
+    @Upsert abstract suspend fun addPin(pin: PinEntity)
+
+    @Query("DELETE FROM pins WHERE `key` = :key") abstract suspend fun removePin(key: String)
+
+    @Query("SELECT * FROM saved_items ORDER BY addedAt DESC") abstract fun saved(): Flow<List<SavedItemEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM saved_items WHERE `key` = :key)") abstract fun isSaved(key: String): Flow<Boolean>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM saved_items WHERE `key` = :key)") abstract suspend fun isSavedNow(key: String): Boolean
+
+    @Upsert abstract suspend fun addSaved(item: SavedItemEntity)
+
+    @Upsert abstract suspend fun addSavedAll(items: List<SavedItemEntity>)
+
+    @Query("DELETE FROM saved_items WHERE `key` = :key") abstract suspend fun removeSaved(key: String)
+
+    @Query("SELECT * FROM recent_items ORDER BY at DESC LIMIT :limit") abstract fun recentItems(limit: Int): Flow<List<RecentItemEntity>>
+
+    @Upsert abstract suspend fun addRecent(item: RecentItemEntity)
+
+    @Query("DELETE FROM recent_items WHERE `key` NOT IN (SELECT `key` FROM recent_items ORDER BY at DESC LIMIT 60)")
+    abstract suspend fun pruneRecent()
+
+    @Query("SELECT s.* FROM history h JOIN songs s ON s.id = h.songId WHERE h.playedAt >= :since ORDER BY h.playedAt DESC LIMIT :limit")
+    abstract suspend fun playsSince(since: Long, limit: Int): List<SongEntity>
+
+    @Query("SELECT MIN(playedAt) FROM history") abstract suspend fun firstPlayAt(): Long?
+
+    @Query("SELECT * FROM playlists WHERE source = :source") abstract suspend fun playlistsBySource(source: String): List<PlaylistEntity>
+
+    @Query("DELETE FROM playlists WHERE source = :source") abstract suspend fun deletePlaylistsBySource(source: String)
+
+    @Query("SELECT * FROM artist_tags WHERE artist = :artist") abstract suspend fun artistTags(artist: String): ArtistTagsEntity?
+
+    @Upsert abstract suspend fun putArtistTags(tags: ArtistTagsEntity)
+
     /** Canciones referenciadas por la biblioteca (para el backup). */
     @Query(
         """
@@ -161,4 +206,26 @@ interface DownloadDao {
     suspend fun update(songId: String, status: String, progress: Float, bytes: Long, now: Long)
 
     @Query("DELETE FROM downloads WHERE songId = :songId") suspend fun delete(songId: String)
+}
+
+@Dao
+interface SpotifyDao {
+    /** Lookup por clave primaria: O(1) por canción ya emparejada. */
+    @Query("SELECT * FROM spotify_matches WHERE spotifyId IN (:ids)") suspend fun matches(ids: List<String>): List<SpotifyMatchEntity>
+
+    @Upsert suspend fun putMatch(match: SpotifyMatchEntity)
+
+    @Query("SELECT m.* FROM spotify_matches m WHERE m.videoId IS NULL AND m.spotifyId IN (SELECT spotifyId FROM spotify_playlist_tracks) ORDER BY m.title")
+    fun unmatched(): Flow<List<SpotifyMatchEntity>>
+
+    @Query("DELETE FROM spotify_playlist_tracks WHERE playlistId = :playlistId") suspend fun clearTracks(playlistId: String)
+
+    @Upsert suspend fun putTracks(rows: List<SpotifyPlaylistTrackEntity>)
+
+    @Query("SELECT * FROM spotify_playlist_tracks WHERE spotifyId = :spotifyId") suspend fun playlistsOf(spotifyId: String): List<SpotifyPlaylistTrackEntity>
+
+    @Query("SELECT * FROM spotify_playlist_tracks WHERE playlistId = :playlistId ORDER BY position")
+    suspend fun tracks(playlistId: String): List<SpotifyPlaylistTrackEntity>
+
+    @Query("DELETE FROM spotify_playlist_tracks") suspend fun clearAllTracks()
 }

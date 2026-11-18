@@ -30,11 +30,18 @@ data class ThemeSpec(
     val accentPulse: Boolean = false,
     /** Intensidad 0..1 de la textura de grano (tema Vinilo). */
     val grain: Float = 0f,
+    /** Familia de iconos de navegación y reproducción. */
+    val icons: IconStyle = IconStyle.STROKE,
+    /** Portadas con tramado de 1 bit a dos tonos (tema Tinta); la que suena vuelve a color. */
+    val ditherArtwork: Boolean = false,
     /** `true` para los temas creados en el editor. */
     val custom: Boolean = false,
 )
 
-enum class PlayerLayout { ARTWORK_HERO, IMMERSIVE, MINIMAL, VINYL }
+/** `BENTO` es el reproductor en bloques del tema Tinta; `CINEMATIC` ("Cine") pone el vídeo de la canción a pantalla completa. */
+enum class PlayerLayout { ARTWORK_HERO, IMMERSIVE, MINIMAL, VINYL, BENTO, CINEMATIC }
+
+enum class IconStyle { STROKE, HAND_DRAWN }
 
 enum class NavStyle { FLOATING_GLASS_PILL, BOTTOM_BAR, SIDE_RAIL }
 
@@ -65,9 +72,15 @@ data class Palette(
     val onAccent: String,
     val outline: String,
     val error: String = "#FF5A5F",
+    /** Bloques de las composiciones *bento* (perfil, reproductor Tinta). Si faltan se derivan de la paleta. */
+    val blockPrimary: String? = null,
+    val blockLight: String? = null,
+    val blockMuted: String? = null,
+    /** Texto sobre los bloques claros. */
+    val onBlock: String? = null,
 )
 
-enum class FontToken { GROTESK, INTER, MONO, DOT, SERIF, WIDE }
+enum class FontToken { GROTESK, INTER, MONO, DOT, SERIF, WIDE, ROUNDED, NUNITO }
 
 @Serializable
 data class TypographyTokens(

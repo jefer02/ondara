@@ -124,6 +124,8 @@ fun ThemeEditorScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, 
                     PlayerLayout.IMMERSIVE -> "Inmersivo"
                     PlayerLayout.MINIMAL -> "Mínimo"
                     PlayerLayout.VINYL -> "Vinilo"
+                    PlayerLayout.BENTO -> "Bento"
+                    PlayerLayout.CINEMATIC -> "Cine"
                 }
             }
         }

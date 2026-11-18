@@ -37,6 +37,9 @@ val LocalOndaraMotion = staticCompositionLocalOf<OndaraMotion> { error("OndaraTh
 val LocalOndaraMaterials = staticCompositionLocalOf<OndaraMaterials> { error("OndaraTheme no está en la composición") }
 val LocalArtworkPalette = staticCompositionLocalOf<ArtworkPalette?> { null }
 val LocalContentColor = staticCompositionLocalOf { Color.White }
+
+/** Familia de iconos del tema activo; `Icon()` la consulta para sustituir el trazo por el dibujado a mano. */
+val LocalIconStyle = staticCompositionLocalOf { IconStyle.STROKE }
 val LocalTextStyle = staticCompositionLocalOf { TextStyle.Default }
 
 /** Amplitud del audio 0..1 como lambda (se lee en fase de dibujo, sin recomponer). */
@@ -96,6 +99,7 @@ fun OndaraTheme(
         LocalOndaraMotion provides motion,
         LocalOndaraMaterials provides materials,
         LocalArtworkPalette provides artwork,
+        LocalIconStyle provides spec.icons,
         LocalContentColor provides colors.onBackground,
         LocalTextStyle provides typography.body,
         content = content,
@@ -126,7 +130,13 @@ private fun animated(target: OndaraColors, durationMs: Int): OndaraColors {
     val onAccent by animateColorAsState(target.onAccent, spec, label = "onAccent")
     val outline by animateColorAsState(target.outline, spec, label = "outline")
     val error by animateColorAsState(target.error, spec, label = "error")
-    return OndaraColors(background, surface, surfaceHigh, onBackground, onMuted, accent, onAccent, outline, error, target.isDark)
+    val blockPrimary by animateColorAsState(target.blockPrimary, spec, label = "blockPrimary")
+    val blockLight by animateColorAsState(target.blockLight, spec, label = "blockLight")
+    val blockMuted by animateColorAsState(target.blockMuted, spec, label = "blockMuted")
+    return OndaraColors(
+        background, surface, surfaceHigh, onBackground, onMuted, accent, onAccent, outline, error, target.isDark,
+        blockPrimary, blockLight, blockMuted, target.onBlock, target.onBlockMuted,
+    )
 }
 
 private fun variable(resId: Int): FontFamily = FontFamily(
@@ -141,6 +151,8 @@ private val Mono by lazy { variable(R.font.jetbrains_mono) }
 private val Dot by lazy { variable(R.font.doto) }
 private val Serif by lazy { variable(R.font.fraunces) }
 private val Wide by lazy { variable(R.font.unbounded) }
+private val Rounded by lazy { variable(R.font.fredoka) }
+private val Nunito by lazy { variable(R.font.nunito) }
 
 /** Familias tipográficas incluidas (todas OFL, variables). */
 fun fontFamily(token: FontToken): FontFamily = when (token) {
@@ -150,4 +162,6 @@ fun fontFamily(token: FontToken): FontFamily = when (token) {
     FontToken.DOT -> Dot
     FontToken.SERIF -> Serif
     FontToken.WIDE -> Wide
+    FontToken.ROUNDED -> Rounded
+    FontToken.NUNITO -> Nunito
 }

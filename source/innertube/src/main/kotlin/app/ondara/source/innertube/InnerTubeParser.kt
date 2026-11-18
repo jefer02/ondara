@@ -163,6 +163,56 @@ object InnerTubeParser {
     private fun playlistSongs(contents: JsonElement?): List<Song> =
         contents.array.mapNotNull { (listItem(it[LIST_ITEM]) as? MusicItem.SongItem)?.song }
 
+    // ---- Novedades ---------------------------------------------------------------------------
+
+    /**
+     * Estanterías de `FEmusic_new_releases`. La rejilla inicial ("Mix de novedades") llega sin título,
+     * así que hereda el de la cabecera de la página.
+     */
+    fun newReleases(json: JsonObject): List<HomeShelf> {
+        val pageTitle = json["header"].findFirst("title")["runs"].runsText().orEmpty()
+        return shelves(json).map { if (it.title.isBlank()) it.copy(title = pageTitle) else it }
+    }
+
+    // ---- Cuenta ------------------------------------------------------------------------------
+
+    /** Cabecera del menú de cuenta (`activeAccountHeaderRenderer`); null si la respuesta es la de sin sesión. */
+    fun accountInfo(json: JsonObject): YouTubeAccountInfo? {
+        val header = json.findFirst("activeAccountHeaderRenderer") ?: return null
+        return YouTubeAccountInfo(
+            name = header.path("accountName", "runs").runsText() ?: return null,
+            handle = header.path("channelHandle", "runs").runsText(),
+            avatarUrl = header["accountPhoto"].bestThumbnail(),
+        )
+    }
+
+    /**
+     * Devuelve (playlists, siguiente token) de la biblioteca. Acepta la página inicial (`gridRenderer`),
+     * la continuación antigua (`gridContinuation`) y la de `appendContinuationItemsAction`.
+     * Las tarjetas que no navegan a una playlist ("Nueva playlist") se descartan.
+     */
+    fun libraryPlaylists(json: JsonObject): Pair<List<Playlist>, String?> {
+        val grid = json.path("continuationContents", "gridContinuation") ?: json["contents"].findFirst("gridRenderer")
+        if (grid != null) return grid["items"].array.mapNotNull(::libraryPlaylist) to continuationOf(grid)
+        val items = json.findFirst("continuationItems")
+        return items.array.mapNotNull(::libraryPlaylist) to items?.let(::continuationOf)
+    }
+
+    private fun libraryPlaylist(wrapper: JsonElement): Playlist? {
+        val renderer = wrapper[TWO_ROW]
+        val playlist = (twoRowItem(renderer) as? MusicItem.PlaylistItem)?.playlist ?: return null
+        // Subtítulo típico: "Autor • 12 canciones" (o solo "Lista automática").
+        val texts = renderer.path("subtitle", "runs").array.mapNotNull { it["text"].string }
+        return playlist.copy(
+            author = looseSegments(texts).firstOrNull(),
+            songCount = COUNT.find(texts.joinToString(""))?.groupValues?.get(1)?.filter(Char::isDigit)?.toIntOrNull(),
+        )
+    }
+
+    /** Canciones del historial: una `musicShelfRenderer` por día ("Hoy", "Ayer"…), de más reciente a más antigua. */
+    fun history(json: JsonObject): List<Song> =
+        json["contents"].findAll("musicShelfRenderer").flatMap { playlistSongs(it["contents"]) }.distinctBy { it.id }
+
     // ---- Cola / radio -------------------------------------------------------------------------
 
     fun queue(json: JsonObject): List<Song> = json.findAll("playlistPanelVideoRenderer").mapNotNull { r ->

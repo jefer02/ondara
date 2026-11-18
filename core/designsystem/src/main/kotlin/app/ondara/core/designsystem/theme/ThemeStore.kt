@@ -71,7 +71,7 @@ class ThemeStore @Inject constructor(@ApplicationContext private val context: Co
     companion object {
         const val DEFAULT_ID = "ondara"
         private const val ASSET_DIR = "themes"
-        private val ORDER = listOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico")
+        private val ORDER = listOf("ondara", "cupertino", "mono", "vinilo", "neon", "dinamico", "tinta")
 
         /** Comprueba que los colores se puedan parsear; lanza `IllegalArgumentException` si no. */
         fun validate(spec: ThemeSpec) {

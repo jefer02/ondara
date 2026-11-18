@@ -45,6 +45,7 @@ private enum class Dialog { NONE, YT_URL, CSV_NAME, EXPORT_PASSWORD, IMPORT_PASS
 fun SettingsScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings = state.settings
+    val supportsDither = OndaraTheme.spec.ditherArtwork
     val context = LocalContext.current
     var dialog by remember { mutableStateOf(Dialog.NONE) }
     var pendingCsv by remember { mutableStateOf<String?>(null) }
@@ -90,7 +91,7 @@ fun SettingsScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, vie
 
     ScreenScaffold("Ajustes", modifier, onBack = { onNavigate(Nav.Back) }) {
         state.busy?.let { busy ->
-            item(key = "busy") {
+            item(key = "busy", contentType = "progress") {
                 Column(Modifier.padding(horizontal = OndaraTheme.spacing.screen, vertical = OndaraTheme.spacing.sm)) {
                     Label(busy, color = OndaraTheme.colors.accent)
                     Skeleton(Modifier.padding(top = 6.dp).fillMaxWidth().height(4.dp))
@@ -98,30 +99,70 @@ fun SettingsScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, vie
             }
         }
         section("Apariencia")
-        item { SettingRow("Temas", subtitle = "Galería, editor y temas compartidos", icon = OndaraIcons.Palette, onClick = { onNavigate(Nav.Themes) }) }
-        item { SettingRow("Showcase de componentes", subtitle = "Todo el sistema de diseño con el tema activo", icon = OndaraIcons.Wave, onClick = { onNavigate(Nav.Showcase) }) }
-        item { SettingRow("Vibración sutil", subtitle = "Hápticos al reproducir, saltar y deslizar", icon = OndaraIcons.Bolt) { OndaraSwitch(settings.haptics, { v -> update { it.copy(haptics = v) } }) } }
+        item(key = "setting-1", contentType = "setting") {
+            SettingRow("Temas", subtitle = "Galería, editor y temas compartidos",
+                icon = OndaraIcons.Palette,
+                onClick = { onNavigate(Nav.Themes) }) }
+        item(key = "setting-2", contentType = "setting") {
+            SettingRow("Showcase de componentes", subtitle = "Todo el sistema de diseño con el tema activo",
+                icon = OndaraIcons.Wave,
+                onClick = { onNavigate(Nav.Showcase) }) }
+        item(key = "setting-3", contentType = "setting") {
+            SettingRow("Vibración sutil", subtitle = "Hápticos al reproducir, saltar y deslizar",
+                icon = OndaraIcons.Bolt) { OndaraSwitch(settings.haptics, { v -> update { it.copy(haptics = v) } }) } }
+
+        if (supportsDither) {
+            item(key = "dither", contentType = "setting") {
+                SettingRow("Portadas tramadas",
+                icon = OndaraIcons.Palette) {
+                    OndaraSwitch(settings.ditherArtwork, { v -> update { it.copy(ditherArtwork = v) } })
+                }
+            }
+        }
+        item(key = "player", contentType = "setting") {
+            SettingRow("Reproductor", subtitle = "Layout, vídeo de fondo",
+                icon = OndaraIcons.Play,
+                onClick = { onNavigate(Nav.PlayerSettings) })
+        }
+        item(key = "translation", contentType = "setting") {
+            SettingRow("Traducir letras", subtitle = "Usa el traductor de Google; el texto de la letra se envía a sus servidores",
+                icon = OndaraIcons.Translate) {
+                OndaraSwitch(settings.translateLyrics, { v -> update { it.copy(translateLyrics = v) } })
+            }
+        }
 
         section("Reproducción")
-        item { SettingRow("Calidad de streaming", subtitle = qualityLabel(settings.streamQuality), icon = OndaraIcons.Wave, onClick = { dialog = Dialog.STREAM_QUALITY }) }
-        item {
-            SettingRow("Crossfade", subtitle = if (settings.crossfadeSeconds == 0) "Desactivado · reproducción sin pausas (gapless)" else "${settings.crossfadeSeconds} s · curva de igual potencia", icon = OndaraIcons.Shuffle)
+        item(key = "setting-4", contentType = "setting") {
+            SettingRow("Calidad de streaming", subtitle = qualityLabel(settings.streamQuality),
+                icon = OndaraIcons.Wave,
+                onClick = { dialog = Dialog.STREAM_QUALITY }) }
+        item(key = "setting-5", contentType = "setting") {
+            SettingRow("Crossfade", subtitle = if (settings.crossfadeSeconds == 0) "Desactivado · reproducción sin pausas (gapless)" else "${settings.crossfadeSeconds} s · curva de igual potencia",
+                icon = OndaraIcons.Shuffle)
             OndaraValueSlider(
                 settings.crossfadeSeconds.toFloat(), { v -> update { it.copy(crossfadeSeconds = v.toInt()) } }, 0f..12f,
                 Modifier.padding(horizontal = OndaraTheme.spacing.screen), steps = 12, description = "Segundos de crossfade",
             )
         }
-        item { SettingRow("Normalizar volumen", subtitle = "Iguala la sonoridad entre canciones", icon = OndaraIcons.Equalizer) { OndaraSwitch(settings.normalizeVolume, { v -> update { it.copy(normalizeVolume = v) } }) } }
-        item { SettingRow("Saltar silencios", icon = OndaraIcons.Next) { OndaraSwitch(settings.skipSilence, { v -> update { it.copy(skipSilence = v) } }) } }
-        item { SettingRow("Ondara Flow", subtitle = "Radio infinita cuando se acaba la cola", icon = OndaraIcons.Radio) { OndaraSwitch(settings.ondaraFlow, { v -> update { it.copy(ondaraFlow = v) } }) } }
+        item(key = "setting-6", contentType = "setting") {
+            SettingRow("Normalizar volumen", subtitle = "Iguala la sonoridad entre canciones",
+                icon = OndaraIcons.Equalizer) { OndaraSwitch(settings.normalizeVolume, { v -> update { it.copy(normalizeVolume = v) } }) } }
+        item(key = "setting-7", contentType = "setting") {
+            SettingRow("Saltar silencios",
+                icon = OndaraIcons.Next) { OndaraSwitch(settings.skipSilence, { v -> update { it.copy(skipSilence = v) } }) } }
+        item(key = "setting-8", contentType = "setting") {
+            SettingRow("Ondara Flow", subtitle = "Radio infinita cuando se acaba la cola",
+                icon = OndaraIcons.Radio) { OndaraSwitch(settings.ondaraFlow, { v -> update { it.copy(ondaraFlow = v) } }) } }
 
         section("Ecualizador")
-        item { SettingRow("Ecualizador", subtitle = "Ajusta cada banda de frecuencia", icon = OndaraIcons.Equalizer) { OndaraSwitch(settings.equalizer.enabled, { v -> update { it.copy(equalizer = it.equalizer.copy(enabled = v)) } }) } }
+        item(key = "setting-9", contentType = "setting") {
+            SettingRow("Ecualizador", subtitle = "Ajusta cada banda de frecuencia",
+                icon = OndaraIcons.Equalizer) { OndaraSwitch(settings.equalizer.enabled, { v -> update { it.copy(equalizer = it.equalizer.copy(enabled = v)) } }) } }
         if (settings.equalizer.enabled) {
             if (state.bands.isEmpty()) {
-                item { Label("Empieza a reproducir algo para ver las bandas del dispositivo.", Modifier.padding(horizontal = OndaraTheme.spacing.screen), maxLines = 2) }
+                item(key = "setting-10", contentType = "setting") { Label("Empieza a reproducir algo para ver las bandas del dispositivo.", Modifier.padding(horizontal = OndaraTheme.spacing.screen), maxLines = 2) }
             }
-            items(state.bands.size, key = { "band$it" }) { i ->
+            items(state.bands.size, key = { "band$it" }, contentType = { "band" }) { i ->
                 val band = state.bands[i]
                 val level = settings.equalizer.bandLevelsMb.getOrElse(i) { 0 }
                 Row(Modifier.padding(horizontal = OndaraTheme.spacing.screen), verticalAlignment = Alignment.CenterVertically) {
@@ -136,33 +177,80 @@ fun SettingsScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, vie
         }
 
         section("Descargas")
-        item { SettingRow("Calidad de descarga", subtitle = qualityLabel(settings.downloadQuality), icon = OndaraIcons.Download, onClick = { dialog = Dialog.DOWNLOAD_QUALITY }) }
+        item(key = "setting-11", contentType = "setting") {
+            SettingRow("Calidad de descarga", subtitle = qualityLabel(settings.downloadQuality),
+                icon = OndaraIcons.Download,
+                onClick = { dialog = Dialog.DOWNLOAD_QUALITY }) }
 
-        section("Cuenta e importación")
-        item {
-            if (settings.youtubeCookie.isBlank()) {
-                SettingRow("Iniciar sesión en YouTube Music", subtitle = "Opcional: para importar tus playlists privadas", icon = OndaraIcons.Person, onClick = { onNavigate(Nav.Login) })
-            } else {
-                SettingRow("Sesión de YouTube Music activa", subtitle = "Toca para cerrar sesión", icon = OndaraIcons.Person, onClick = { viewModel.onEvent(SettingsEvent.Logout) })
+        section("Cuentas")
+        item(key = "accounts", contentType = "setting") {
+            val youtube = state.accounts.youtube.joinToString(", ") { it.name }.ifBlank { "sin conectar" }
+            val spotify = state.accounts.spotify?.name ?: "sin conectar"
+            SettingRow("Cuentas conectadas", subtitle = "YouTube Music: $youtube · Spotify: $spotify",
+                icon = OndaraIcons.Person,
+                onClick = { onNavigate(Nav.Account) })
+        }
+        item(key = "profile", contentType = "setting") {
+            SettingRow("Perfil",
+                icon = OndaraIcons.Person,
+                onClick = { onNavigate(Nav.Profile) })
+        }
+        if (state.accounts.activeYouTube != null) {
+            item(key = "syncLikes", contentType = "setting") {
+                SettingRow("Sincronizar Me gusta con YouTube Music",
+                icon = OndaraIcons.Star) {
+                    OndaraSwitch(settings.syncLikes, { v -> update { it.copy(syncLikes = v) } })
+                }
             }
         }
-        item { SettingRow("Importar playlist de YouTube Music", subtitle = "Pega el enlace de la playlist", icon = OndaraIcons.Import, onClick = { dialog = Dialog.YT_URL }) }
-        item { SettingRow("Importar CSV (Spotify / Exportify)", subtitle = "Columnas de título y artista", icon = OndaraIcons.Import, onClick = { openCsv.launch(arrayOf("text/*", "application/csv", "application/octet-stream")) }) }
-        item { SettingRow("País del contenido", subtitle = "${settings.contentCountry} · idioma ${settings.contentLanguage}", icon = OndaraIcons.Home, onClick = { dialog = Dialog.COUNTRY }) }
-        item { SettingRow("Servidor de extensión de audio", subtitle = settings.extensionEndpoint.ifBlank { "Desactivado · se usa YouTube" }, icon = OndaraIcons.Bolt, onClick = { dialog = Dialog.EXTENSION }) }
+        if (state.accounts.spotify != null) {
+            item(key = "unmatched", contentType = "setting") {
+                SettingRow("Canciones de Spotify sin coincidencia",
+                icon = OndaraIcons.Spotify,
+                    onClick = { onNavigate(Nav.Unmatched) })
+            }
+        }
+        section("Importación")
+        item(key = "setting-12", contentType = "setting") {
+            SettingRow("Importar playlist de YouTube Music", subtitle = "Pega el enlace de la playlist",
+                icon = OndaraIcons.Import,
+                onClick = { dialog = Dialog.YT_URL }) }
+        item(key = "setting-13", contentType = "setting") {
+            SettingRow("Importar CSV (Spotify / Exportify)", subtitle = "Columnas de título y artista",
+                icon = OndaraIcons.Import,
+                onClick = { openCsv.launch(arrayOf("text/*", "application/csv", "application/octet-stream")) }) }
+        item(key = "setting-14", contentType = "setting") {
+            SettingRow("País del contenido", subtitle = "${settings.contentCountry} · idioma ${settings.contentLanguage}",
+                icon = OndaraIcons.Home,
+                onClick = { dialog = Dialog.COUNTRY }) }
+        item(key = "setting-15", contentType = "setting") {
+            SettingRow("Servidor de extensión de audio", subtitle = settings.extensionEndpoint.ifBlank { "Desactivado · se usa YouTube" },
+                icon = OndaraIcons.Bolt,
+                onClick = { dialog = Dialog.EXTENSION }) }
 
         section("Copia de seguridad")
-        item { SettingRow("Exportar backup", subtitle = "Biblioteca y ajustes en JSON, con cifrado opcional", icon = OndaraIcons.Share, onClick = { dialog = Dialog.EXPORT_PASSWORD }) }
-        item { SettingRow("Restaurar backup", icon = OndaraIcons.Import, onClick = { openBackup.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }) }
+        item(key = "setting-16", contentType = "setting") {
+            SettingRow("Exportar backup", subtitle = "Biblioteca y ajustes en JSON, con cifrado opcional",
+                icon = OndaraIcons.Share,
+                onClick = { dialog = Dialog.EXPORT_PASSWORD }) }
+        item(key = "setting-17", contentType = "setting") {
+            SettingRow("Restaurar backup",
+                icon = OndaraIcons.Import,
+                onClick = { openBackup.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }) }
 
+        item(key = "about", contentType = "setting") {
+            SettingRow("Acerca de",
+                icon = OndaraIcons.Info,
+                onClick = { onNavigate(Nav.About) })
+        }
         section("Privacidad")
-        item {
+        item(key = "setting-18", contentType = "setting") {
             SettingRow("Informes de fallos", subtitle = "Desactivado por defecto. Si lo activas, los fallos se guardan como JSON solo en tu dispositivo (carpeta crash de la app); nada se envía. Se aplica al reiniciar.",
                 icon = OndaraIcons.Check) {
                 OndaraSwitch(settings.crashReports, { v -> update { it.copy(crashReports = v) } })
             }
         }
-        item {
+        item(key = "setting-19", contentType = "setting") {
             Text(
                 "Ondara no incluye telemetría ni anuncios. No aloja contenido: reproduce enlaces públicos de YouTube Music, que pertenecen a sus dueños. " +
                     "Apoya a los artistas. Software libre bajo GPL-3.0.",

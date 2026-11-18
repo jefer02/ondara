@@ -1,0 +1,229 @@
+package app.ondara.feature.account
+
+import android.net.Uri
+import android.webkit.CookieManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
+import app.ondara.core.designsystem.component.*
+import app.ondara.core.designsystem.icon.Icon
+import app.ondara.core.designsystem.icon.OndaraIcons
+import app.ondara.core.designsystem.theme.OndaraTheme
+import app.ondara.core.model.SyncProgress
+import app.ondara.core.ui.*
+
+@Composable
+fun AccountSheetContent(
+    onNavigate: (Nav) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: AccountViewModel = hiltViewModel(),
+) {
+    val state by viewModel.state.collectAsState()
+    CollectEffects(viewModel.effects) { effect ->
+        if (effect is AccountEffect.Navigate) { onDismiss(); onNavigate(effect.nav) }
+    }
+    val event = viewModel::onEvent
+    Column(
+        modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(OndaraTheme.spacing.screen),
+        verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.md)) {
+            Avatar(state.settings.profileName, state.settings.avatarPath, size = 64.dp)
+            Column {
+                Text(state.settings.profileName.ifBlank { "Tu perfil" }, style = OndaraTheme.type.title)
+                OndaraButton("Ver perfil", { event(AccountEvent.Navigate(Nav.Profile)) }, style = ButtonStyle.GHOST)
+            }
+        }
+        Text("Cuentas conectadas", style = OndaraTheme.type.headline)
+        Row { Icon(OndaraIcons.YouTube, null); Text("YouTube Music") }
+        Text(state.accounts.activeYouTube?.let { "Conectado como ${it.name}" } ?: "Sin conectar")
+        state.accounts.youtube.forEach { account ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                OndaraButton(
+                    account.name + if (account.id == state.accounts.activeYouTubeId) " · Activa" else " · Cambiar",
+                    { event(AccountEvent.Switch(account.id)) }, style = ButtonStyle.GHOST, enabled = !state.busy,
+                    modifier = Modifier.weight(1f),
+                )
+                OndaraIconButton(OndaraIcons.Close, "Cerrar sesión de ${account.name}", { event(AccountEvent.AskRemove(account.id)) })
+            }
+        }
+        OndaraButton(
+            if (state.accounts.youtube.isEmpty()) "Conectar" else "Añadir otra cuenta",
+            { event(AccountEvent.Navigate(Nav.Login)) }, style = ButtonStyle.TONAL,
+        )
+        Row { Icon(OndaraIcons.Spotify, null); Text("Spotify") }
+        Text(state.accounts.spotify?.let { "Conectado como ${it.name}" } ?: "Sin conectar")
+        OndaraButton(
+            if (state.accounts.spotify == null) "Conectar" else "Desconectar",
+            { event(if (state.accounts.spotify == null) AccountEvent.Navigate(Nav.SpotifyConnect) else AccountEvent.Disconnect) },
+            style = ButtonStyle.TONAL, enabled = !state.busy,
+        )
+        ImportProgress(state.progress)
+        if (state.accounts.anyConnected) OndaraButton("Sincronizar ahora", { event(AccountEvent.Sync) }, enabled = !state.progress.running)
+        if (state.accounts.youtube.isNotEmpty()) {
+            Text("Sincronizar Me gusta con YouTube Music")
+            OndaraSwitch(state.settings.syncLikes, { event(AccountEvent.Likes(it)) }, Modifier.semantics { contentDescription = "Sincronizar Me gusta con YouTube Music" })
+        }
+        ErrorMessage(state.error)
+        listOf("Temas" to Nav.Themes, "Ajustes" to Nav.Settings, "Descargas" to Nav.Downloads, "Acerca de" to Nav.About).forEach { (title, nav) ->
+            OndaraButton(title, { event(AccountEvent.Navigate(nav)) }, modifier = Modifier.fillMaxWidth(), style = ButtonStyle.GHOST)
+        }
+    }
+    if (state.removal != null) OndaraDialog(
+        "Cerrar sesión", { event(AccountEvent.AskRemove(null)) }, "Desconectar", { event(AccountEvent.Remove) },
+        text = "Se eliminará la sesión guardada de esta cuenta de YouTube Music.",
+    )
+}
+
+@Composable
+internal fun ErrorMessage(message: String?) {
+    if (message != null) Text(message, color = OndaraTheme.colors.error)
+}
+
+@Composable
+internal fun ImportProgress(progress: SyncProgress) {
+    val motion = OndaraTheme.motion
+    val fraction = animateFloatAsState(progress.fraction.coerceIn(0f, 1f), motion.spring(), label = "Importación")
+    val colors = OndaraTheme.colors
+    if (progress.running) {
+        Text("Importando ${progress.done} de ${progress.total} canciones…", style = OndaraTheme.type.caption)
+        Canvas(
+            Modifier.fillMaxWidth().height(OndaraTheme.spacing.sm).semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(progress.fraction.coerceIn(0f, 1f), 0f..1f)
+            },
+        ) {
+            drawRoundRect(colors.surfaceHigh, cornerRadius = CornerRadius(size.height))
+            drawRoundRect(colors.accent, size = Size(size.width * fraction.value, size.height), cornerRadius = CornerRadius(size.height))
+        }
+    }
+    ErrorMessage(progress.error)
+}
+
+@Composable
+fun SpotifyConnectScreen(
+    onNavigate: (Nav) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: SpotifyConnectViewModel = hiltViewModel(),
+) {
+    val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
+    val event = viewModel::onEvent
+    CollectEffects(viewModel.effects) { effect ->
+        when (effect) {
+            is AccountEffect.Navigate -> onNavigate(effect.nav)
+            is AccountEffect.OpenUrl -> runCatching {
+                CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(effect.url))
+            }.onFailure { event(AccountEvent.Error("No se pudo abrir el navegador: ${it.message}")) }
+        }
+    }
+    ScreenScaffold("Spotify", modifier, onBack = { event(AccountEvent.Navigate(Nav.Back)) }) {
+        item(key = "spotify", contentType = "conexión") {
+            Column(verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.lg)) {
+                Text(
+                    "Spotify no permite reproducir su audio en apps de terceros. Ondara importa tus playlists y canciones " +
+                        "y las reproduce desde YouTube Music buscando cada canción equivalente.",
+                )
+                if (state.accounts.spotify != null) {
+                    Text("Conectado como ${state.accounts.spotify?.name}", style = OndaraTheme.type.title)
+                    ImportProgress(state.progress)
+                    OndaraButton("Sincronizar ahora", { event(AccountEvent.Sync) }, enabled = !state.progress.running)
+                    OndaraButton("Sin coincidencia (${state.unmatched})", { event(AccountEvent.Navigate(Nav.Unmatched)) })
+                    OndaraButton("Desconectar", { event(AccountEvent.Disconnect) }, enabled = !state.busy)
+                    OndaraButton("Volver", { event(AccountEvent.Navigate(Nav.Back)) }, style = ButtonStyle.GHOST)
+                } else {
+                    Text("Oficial (recomendado)", style = OndaraTheme.type.title)
+                    Text(
+                        "1. Abre developer.spotify.com/dashboard.\n2. Selecciona Create app.\n" +
+                            "3. Añade Redirect URI: ondara://spotify-callback\n4. Marca Web API y guarda.\n5. Copia el Client ID y pégalo aquí.",
+                    )
+                    OndaraButton("Abrir Spotify for Developers", { event(AccountEvent.Developers) }, style = ButtonStyle.GHOST)
+                    OndaraTextField(state.settings.spotifyClientId, { event(AccountEvent.ClientId(it)) }, placeholder = "Client ID")
+                    OndaraButton("Conectar con Spotify", { event(AccountEvent.Authorize) }, enabled = !state.busy)
+                    Text(
+                        "En modo desarrollo, el dueño de la app necesita Premium. Se permiten hasta 5 usuarios autorizados; " +
+                            "añádelos en User Management.", style = OndaraTheme.type.caption,
+                    )
+                    Text("Experimental", style = OndaraTheme.type.headline)
+                    OndaraSwitch(state.settings.spotifyExperimental, { event(AccountEvent.Experimental(it)) }, Modifier.semantics { contentDescription = "Spotify experimental" })
+                    if (state.settings.spotifyExperimental) SpotifyWebLogin(event)
+                }
+                ErrorMessage(state.error)
+            }
+        }
+    }
+    if (state.experimentalWarning) OndaraDialog(
+        "Spotify experimental", { event(AccountEvent.CancelExperimental) }, "Aceptar", { event(AccountEvent.AcceptExperimental) },
+        text = "Usa la cookie de sesión del reproductor web de Spotify. Es frágil —Spotify cambia sus claves— " +
+            "y va contra sus Términos de servicio. Úsalo bajo tu responsabilidad.",
+    )
+}
+
+@Composable
+private fun SpotifyWebLogin(event: (AccountEvent) -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    val latestEvent by rememberUpdatedState(event)
+    LaunchedEffect(webView) {
+        while (webView != null) {
+            val cookie = CookieManager.getInstance().getCookie("https://open.spotify.com").orEmpty()
+                .split(';').map { it.trim() }.firstOrNull { it.startsWith("sp_dc=") }?.substringAfter('=')
+            if (!cookie.isNullOrBlank()) {
+                latestEvent(AccountEvent.Cookie(cookie))
+                break
+            }
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    DisposableEffect(Unit) { onDispose { webView?.stopLoading(); webView?.destroy(); webView = null } }
+    AndroidView(
+        modifier = Modifier.fillMaxWidth().height(480.dp),
+        factory = { context ->
+            WebView(context).apply {
+                webView = this
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                CookieManager.getInstance().setAcceptCookie(true)
+                webViewClient = object : WebViewClient() {
+                    override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                        if (request?.isForMainFrame == true) event(AccountEvent.Error("No se pudo cargar Spotify: ${error?.description}"))
+                    }
+                }
+                loadUrl("https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
+            }
+        },
+    )
+}
+
+@Composable
+fun AboutScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
+    ScreenScaffold("Acerca de", modifier, onBack = { onNavigate(Nav.Back) }) {
+        item(key = "créditos", contentType = "texto") {
+            Column(verticalArrangement = Arrangement.spacedBy(OndaraTheme.spacing.lg)) {
+                Text("Ondara $version", style = OndaraTheme.type.display)
+                Text("Licencia GPL-3.0")
+                Text("YouTube Music vía InnerTube · NewPipe Extractor · Echo Music y Metrolist por las técnicas de sesión y Spotify · LRCLIB / KuGou")
+                Text("Tipografías OFL: Space Grotesk, Inter, JetBrains Mono, Doto, Fraunces, Unbounded, Fredoka y Nunito.")
+                Text("Ondara no está afiliada a YouTube, Spotify ni Apple.")
+            }
+        }
+    }
+}

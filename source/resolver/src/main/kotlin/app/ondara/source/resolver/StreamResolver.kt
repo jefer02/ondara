@@ -29,8 +29,13 @@ class StreamUnavailableException(val videoId: String, val errors: List<Throwable
 class StreamResolver(
     private val strategies: List<StreamStrategy>,
     private val cache: ResolvedStreamCache,
+    private val videoCache: ResolvedVideoCache = ResolvedVideoCache(),
 ) {
     private val locks = ConcurrentHashMap<String, Mutex>()
+
+    /** Las estrategias de audio que además saben de vídeo, en el mismo orden de prioridad. */
+    private val videoStrategies = strategies.filterIsInstance<VideoStreamStrategy>()
+    private val searchStrategies = strategies.filterIsInstance<VideoSearchStrategy>()
 
     suspend fun resolve(videoId: String, quality: AudioQuality): ResolvedStream {
         val key = cacheKey(videoId, quality)
@@ -68,6 +73,64 @@ class StreamResolver(
     fun cached(videoId: String, quality: AudioQuality): ResolvedStream? = cache.get(cacheKey(videoId, quality))
 
     fun invalidate(videoId: String, quality: AudioQuality) = cache.invalidate(cacheKey(videoId, quality))
+
+    /**
+     * Resuelve las pistas de **vídeo** de [videoId] para el layout "Cine": solo vídeo de baja calidad
+     * (360p–480p) más un stream con audio para el modo "vídeo completo". Devuelve `null` si ninguna
+     * estrategia encuentra vídeo (nunca lanza, salvo cancelación).
+     *
+     * Misma forma que [resolve]: acierto de caché **O(1)**; fallo **O(k)** llamadas de red con k
+     * estrategias de vídeo; las resoluciones concurrentes del mismo id comparten un mutex.
+     */
+    suspend fun resolveVideo(videoId: String): ResolvedVideo? {
+        videoCache.get(videoId)?.let { return it }
+        val key = "video/$videoId"
+        val lock = locks.getOrPut(key) { Mutex() }
+        try {
+            return lock.withLock {
+                videoCache.get(videoId) ?: runVideoChain(videoId)?.also { videoCache.put(videoId, it) }
+            }
+        } finally {
+            if (!lock.isLocked) locks.remove(key, lock)
+        }
+    }
+
+    fun cachedVideo(videoId: String): ResolvedVideo? = videoCache.get(videoId)
+
+    /** Tras un 403 del reproductor de vídeo: la siguiente [resolveVideo] vuelve a la red. O(1). */
+    fun invalidateVideo(videoId: String) = videoCache.invalidate(videoId)
+
+    /**
+     * Busca vídeos musicales por texto con la primera estrategia que devuelva resultados.
+     * O(s) llamadas de red con s estrategias de búsqueda; lista vacía si ninguna responde.
+     */
+    suspend fun searchVideos(query: String): List<VideoSearchHit> {
+        for (strategy in searchStrategies) {
+            val hits = try {
+                strategy.searchVideos(query).getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (!hits.isNullOrEmpty()) return hits
+        }
+        return emptyList()
+    }
+
+    private suspend fun runVideoChain(videoId: String): ResolvedVideo? {
+        for (strategy in videoStrategies) {
+            val video = try {
+                strategy.resolveVideo(videoId).getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (video != null) return video
+        }
+        return null
+    }
 
     private suspend fun runChain(videoId: String, quality: AudioQuality, skip: String?): ResolvedStream {
         val errors = ArrayList<Throwable>()
