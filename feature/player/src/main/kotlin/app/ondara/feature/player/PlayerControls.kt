@@ -2,10 +2,8 @@ package app.ondara.feature.player
 
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -21,7 +19,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.OndaraIcons
@@ -41,13 +38,10 @@ internal fun PlayerMetadata(song: Song, modifier: Modifier = Modifier, foregroun
 
 /** Una línea, desplazamiento lento o elipsis con movimiento reducido. O(n) al medir. */
 @Composable
-internal fun PlayerSingleLine(text: String, style: TextStyle, color: Color) {
-    val reduced = OndaraTheme.motion.reduced
-    BasicText(
-        text, Modifier.fillMaxWidth().height(with(LocalDensity.current) { style.lineHeight.toDp() }).then(
-            if (reduced) Modifier else Modifier.basicMarquee(initialDelayMillis = 2000, velocity = 30.dp),
-        ), style = style.copy(color = color), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-    )
+internal fun PlayerSingleLine(text: String, style: TextStyle, color: Color, centered: Boolean = false) {
+    MarqueeText(text, style.copy(color = color),
+        Modifier.fillMaxWidth().height(with(LocalDensity.current) { style.lineHeight.toDp() }),
+        alignment = if (centered) Alignment.Center else Alignment.CenterStart)
 }
 
 /** Transporte único para todos los layouts; O(1), los eventos pertenecen al ViewModel. */
