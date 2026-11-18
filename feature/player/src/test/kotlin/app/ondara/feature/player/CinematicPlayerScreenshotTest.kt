@@ -47,7 +47,6 @@ class CinematicPlayerScreenshotTest(private val themeId: String, private val lay
             player = PlayerState(queue = listOf(song), currentIndex = 0, isPlaying = true, durationMs = 214_000,
                 context = PlaybackContext("Playlist", "Noches tranquilas")),
             canvas = CanvasState.None(song.id),
-            videoOffer = VideoOffer(song.id).takeIf { layout == PlayerLayout.CINEMATIC },
             // Sin tramado de vídeo: en Robolectric el RenderEffect AGSL del fondo se extiende a las capas
             // hermanas (texto y controles), algo que no ocurre en un dispositivo. El shader se cubre aparte.
             settings = UserSettings(playerLayout = layout.name, ditherVideo = false),

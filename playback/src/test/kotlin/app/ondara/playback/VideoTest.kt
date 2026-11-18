@@ -26,14 +26,6 @@ class VideoTest {
     )
 
     @Test
-    fun `la sincronizacion corrige solo desfases mayores de 150 ms`() {
-        assertNull(videoSyncTarget(1_000, 850, 2_000))
-        assertEquals(1_000L, videoSyncTarget(1_000, 849, 2_000))
-        assertEquals(1_000L, videoSyncTarget(1_000, 1_151, 2_000))
-        assertEquals(2_000L, videoSyncTarget(3_000, 1_000, 2_000))
-    }
-
-    @Test
     fun `red restringe redes medidas y permite ethernet`() {
         assertTrue(VideoNetworkPolicy.allowed(true, true, true, true, true))
         assertTrue(VideoNetworkPolicy.allowed(true, false, true, false, false))

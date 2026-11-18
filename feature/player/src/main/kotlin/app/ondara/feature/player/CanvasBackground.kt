@@ -21,7 +21,6 @@ import app.ondara.core.designsystem.component.MeshGradientBackground
 import app.ondara.core.designsystem.component.twoToneDither
 import app.ondara.core.designsystem.theme.OndaraTheme
 import app.ondara.core.model.CanvasState
-import app.ondara.core.model.CanvasSource
 import app.ondara.core.model.CanvasSurfaces
 import app.ondara.core.ui.Artwork
 
@@ -56,18 +55,14 @@ internal fun CanvasBackground(
         if (!motion.reduced) repeat(2) { slot ->
             val visible = state is CanvasState.Ready && slot == surfaces.active && slot in surfaces.firstFrame
             val opacity = animateFloatAsState(if (visible) 1f else 0f, motion.fade(duration), label = "canvas $slot")
-            val fit = (state as? CanvasState.Ready)?.canvas?.source == CanvasSource.YOUTUBE_VIDEO
-            CanvasTexture(slot, surfaces, onSurface, Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value }, fit)
+            CanvasTexture(slot, surfaces, onSurface, Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value })
         }
     }
 }
 
 @Composable
-private fun CanvasTexture(
-    slot: Int, surfaces: CanvasSurfaces, onSurface: (Int, Any?) -> Unit, modifier: Modifier, fit: Boolean,
-) {
+private fun CanvasTexture(slot: Int, surfaces: CanvasSurfaces, onSurface: (Int, Any?) -> Unit, modifier: Modifier) {
     val callback by rememberUpdatedState(onSurface)
-    val fitFrame by rememberUpdatedState(fit)
     val target = remember { arrayOfNulls<Surface>(1) }
     // Conserva las dimensiones de cada ranura durante el cruce con un vídeo de otra proporción.
     var streamWidth by remember { mutableIntStateOf(0) }
@@ -85,9 +80,9 @@ private fun CanvasTexture(
                 override fun onSurfaceTextureAvailable(texture: SurfaceTexture, viewWidth: Int, viewHeight: Int) {
                     target[0] = Surface(texture)
                     callback(slot, target[0])
-                    crop(streamWidth, streamHeight, fitFrame)
+                    crop(streamWidth, streamHeight)
                 }
-                override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, viewWidth: Int, viewHeight: Int) { crop(streamWidth, streamHeight, fitFrame) }
+                override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, viewWidth: Int, viewHeight: Int) { crop(streamWidth, streamHeight) }
                 override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
                 override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
                     callback(slot, null)
@@ -97,15 +92,13 @@ private fun CanvasTexture(
                 }
             }
         }
-    }, update = { it.crop(streamWidth, streamHeight, fitFrame) }, modifier = modifier)
+    }, update = { it.crop(streamWidth, streamHeight) }, modifier = modifier)
 }
 
 /** Búfer a resolución del stream y transformación center crop, equivalente a RESIZE_MODE_ZOOM. O(1). */
-private fun TextureView.crop(videoWidth: Int, videoHeight: Int, fit: Boolean) {
+private fun TextureView.crop(videoWidth: Int, videoHeight: Int) {
     if (videoWidth <= 0 || videoHeight <= 0 || width <= 0 || height <= 0) return
     surfaceTexture?.setDefaultBufferSize(videoWidth, videoHeight)
     val scale = centerCropScale(videoWidth, videoHeight, width, height)
-    val x = if (fit) 1f / scale.second else scale.first
-    val y = if (fit) 1f / scale.first else scale.second
-    setTransform(Matrix().apply { setScale(x, y, width / 2f, height / 2f) })
+    setTransform(Matrix().apply { setScale(scale.first, scale.second, width / 2f, height / 2f) })
 }

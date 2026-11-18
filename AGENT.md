@@ -317,11 +317,8 @@ Otros pendientes: PoToken propio como estrategia adicional, descarga por rangos 
 53. **Letras completas**. La vista se superpone a todo el reproductor e incluye su propio encabezado con insets.
     El arrastre hacia abajo en el encabezado, o desde el inicio de la lista, cierra la vista. El fondo ocupa el
     área bajo ambas barras del sistema.
-54. **Video completo**. El controlador de canvas comparte superficies y conserva la reproducción de audio como
-    reloj. El resolver prueba el video de la canción y después candidatos compatibles por artista, título y
-    duración. La selección HD es O(n) sobre los formatos de la respuesta. Si aparece la oferta, el modo completo
-    respeta el Wi‑Fi y corrige desviaciones de más de 150 ms. Una rotación conserva la elección de la canción
-    actual, y la vista compacta deja espacio para los controles.
+54. **Reproducción en Cine**. El audio es el único modo de reproducción. El fondo conserva el canvas
+    silenciado en bucle, con portada de respaldo. El clip de YouTube sigue la política de Wi‑Fi.
 55. **Foto de perfil**. El Photo Picker entrega una URI temporal al recortador. Solo la ruta del PNG, los ajustes
     de efecto y la revisión se persisten al final de `UserSettings`. El recorte se guarda de forma atómica con
     un máximo de 1024 px. La caché del efecto usa la foto, la revisión, los tonos y el tamaño como clave. Procesa
