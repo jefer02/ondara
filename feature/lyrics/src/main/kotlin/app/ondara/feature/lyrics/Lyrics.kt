@@ -301,7 +301,7 @@ fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: 
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val height = with(density) { style.lineHeight.toDp() * 3 }
     val offset = with(density) { OndaraTheme.spacing.md.roundToPx() }
-    val shadowRadius = with(density) { OndaraTheme.spacing.xs.toPx() }
+    val shadowRadius = with(density) { OndaraTheme.spacing.lg.toPx() }
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.height(height).clipToBounds(), contentAlignment = Alignment.BottomStart) {
         val constraints = androidx.compose.ui.unit.Constraints(
             maxWidth = with(density) { maxWidth.roundToPx() }, maxHeight = with(density) { height.roundToPx() },
@@ -322,9 +322,9 @@ fun CurrentLyricLineContent(text: String, modifier: Modifier = Modifier, color: 
                 }
                 style.copy(fontSize = style.fontSize * low, lineHeight = style.lineHeight * low)
             }
-            BasicText(current, style = fitted.copy(
+            if (current.isNotEmpty()) BasicText(current, style = fitted.copy(
                 color = if (color == Color.Unspecified) LocalContentColor.current else color,
-                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .55f), blurRadius = shadowRadius),
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .45f), blurRadius = shadowRadius),
             ), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
