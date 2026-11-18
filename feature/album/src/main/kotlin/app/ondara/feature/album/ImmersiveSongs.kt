@@ -21,6 +21,7 @@ import app.ondara.core.ui.PlayingBars
 @Composable
 internal fun ImmersiveSongRow(song: Song, number: Int, onPlay: () -> Unit, onMore: () -> Unit) {
     val foreground = LocalContentColor.current
+    val secondary = ImmersiveSecondaryColor()
     val now = LocalNowPlaying.current
     val current = now.songId == song.id
     Row(
@@ -32,14 +33,14 @@ internal fun ImmersiveSongRow(song: Song, number: Int, onPlay: () -> Unit, onMor
     ) {
         Box(Modifier.width(OndaraTheme.spacing.xxl), contentAlignment = Alignment.Center) {
             if (current) PlayingBars(animate = now.isPlaying, color = foreground)
-            else Text("$number", style = OndaraTheme.type.mono, color = foreground.copy(alpha = 0.7f))
+            else Text("$number", style = OndaraTheme.type.mono, color = secondary)
         }
         Artwork(song.thumbnailUrl, Modifier.size(OndaraTheme.spacing.touch), sizePx = 160, playing = current)
         Column(Modifier.weight(1f)) {
             Text(song.title, style = OndaraTheme.type.bodyStrong, color = foreground, maxLines = 1)
-            Text(song.artistLine, style = OndaraTheme.type.caption, color = foreground.copy(alpha = 0.7f), maxLines = 1)
+            Text(song.artistLine, style = OndaraTheme.type.caption, color = secondary, maxLines = 1)
         }
-        GlassIconButton(OndaraIcons.More, "Más opciones de ${song.title}", onMore, size = OndaraTheme.spacing.touch)
+        OndaraIconButton(OndaraIcons.More, "Más opciones de ${song.title}", onMore, tint = secondary)
     }
 }
 

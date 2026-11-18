@@ -22,7 +22,9 @@ import app.ondara.core.designsystem.R
 
 /** Colores extraídos de la portada en reproducción ("la portada manda"). */
 @Immutable
-data class ArtworkPalette(val dominant: Color, val vibrant: Color, val muted: Color, val light: Color) {
+data class ArtworkPalette(
+    val dominant: Color, val vibrant: Color, val muted: Color, val light: Color, val top: Color = dominant,
+) {
     companion object {
         /** Paleta neutra derivada del propio tema cuando no hay portada. */
         fun from(colors: OndaraColors) = ArtworkPalette(colors.surfaceHigh, colors.accent, colors.surface, colors.onMuted)

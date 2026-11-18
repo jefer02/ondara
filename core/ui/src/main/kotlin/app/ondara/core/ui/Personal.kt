@@ -262,7 +262,7 @@ fun <T : Any> Carousel(
 
 /** Color de página de una pantalla inmersiva y su color de texto con contraste AA garantizado. */
 @Immutable
-data class ImmersiveColors(val page: Color, val content: Color)
+data class ImmersiveColors(val page: Color, val content: Color, val artworkTop: Color = page)
 
 /**
  * Deriva el color de fondo de una página inmersiva del color dominante de su imagen: se mezcla con
@@ -275,9 +275,9 @@ fun rememberImmersiveColors(imageUrl: String?): ImmersiveColors {
     val matte = OndaraTheme.materials.blur.value <= 0f
     val palette = rememberArtworkPalette(imageUrl)
     val dominant = palette?.dominant
-    return remember(dominant, colors.background, colors.onBackground, matte) {
+    return remember(dominant, palette?.top, colors.background, colors.onBackground, matte) {
         val page = if (dominant == null || matte) colors.background else lerp(dominant, colors.background, if (colors.isDark) 0.42f else 0.6f)
-        ImmersiveColors(page, Color(ColorMath.ensureContrast(colors.onBackground.toArgb(), page.toArgb())))
+        ImmersiveColors(page, Color(ColorMath.ensureContrast(colors.onBackground.toArgb(), page.toArgb())), palette?.top ?: page)
     }
 }
 
@@ -302,6 +302,7 @@ fun ImmersiveDetail(
     ImmersiveHeroScaffold(
         title = title,
         pageColor = immersive.page,
+        artworkTop = immersive.artworkTop,
         contentColor = immersive.content,
         onBack = onBack,
         hero = { m -> if (cover != null) cover(m) else Artwork(imageUrl, m, shape = RectangleShape, sizePx = 1080) },
