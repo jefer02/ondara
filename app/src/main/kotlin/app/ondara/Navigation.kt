@@ -84,7 +84,9 @@ import kotlinx.serialization.Serializable
  * y aquí se traduce a rutas tipadas.
  */
 @Composable
-fun OndaraNavHost(navController: NavHostController, onNavigate: (Nav) -> Unit, onOnboardingFinished: () -> Unit) {
+fun OndaraNavHost(
+    navController: NavHostController, onNavigate: (Nav) -> Unit, homeScrollRequest: Int, onOnboardingFinished: () -> Unit,
+) {
     val motion = OndaraTheme.motion
     val duration = if (motion.reduced) 150 else motion.mediumMs
     NavHost(
@@ -99,7 +101,7 @@ fun OndaraNavHost(navController: NavHostController, onNavigate: (Nav) -> Unit, o
             if (motion.reduced) fadeOut(tween(duration)) else fadeOut(tween(duration)) + slideOutHorizontally(tween(duration)) { it / 10 } + scaleOut(tween(duration), 0.97f)
         },
     ) {
-        composable<HomeRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { HomeScreen(onNavigate) }
+        composable<HomeRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { HomeScreen(onNavigate, scrollRequest = homeScrollRequest) }
         composable<SearchRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { SearchScreen(onNavigate) }
         composable<LibraryRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { LibraryScreen(onNavigate) }
         composable<NewsRoute>(enterTransition = { fadeIn(tween(duration)) + scaleIn(tween(duration), 0.98f) }) { NewsScreen(onNavigate) }

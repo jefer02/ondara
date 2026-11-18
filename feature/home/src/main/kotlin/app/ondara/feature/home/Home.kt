@@ -3,8 +3,10 @@ package app.ondara.feature.home
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -151,19 +153,31 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 }
 
 @Composable
-fun HomeScreen(onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(
+    onNavigate: (Nav) -> Unit, modifier: Modifier = Modifier, viewModel: HomeViewModel = hiltViewModel(), scrollRequest: Int = 0,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     CollectEffects(viewModel.effects) { if (it is HomeEffect.Navigate) onNavigate(it.nav) }
-    HomeContent(state, viewModel::onEvent, modifier)
+    HomeContent(state, viewModel::onEvent, modifier, scrollRequest = scrollRequest)
 }
 
 @Composable
-internal fun HomeContent(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modifier: Modifier = Modifier, greetingText: String = greeting()) {
+internal fun HomeContent(
+    state: HomeUiState, onEvent: (HomeEvent) -> Unit, modifier: Modifier = Modifier, greetingText: String = greeting(), scrollRequest: Int = 0,
+) {
     val send = onEvent
     val name = state.settings?.profileName.orEmpty().trim()
     val subtitle = greetingText + if (name.isEmpty()) " · Tu música, en otra frecuencia." else ", $name · Tu música, en otra frecuencia."
     val pickWidth = LocalConfiguration.current.screenWidthDp.dp * 0.7f
-    ScreenScaffold("Inicio", modifier, subtitle = subtitle, actions = { AvatarButton(onClick = { send(HomeEvent.Navigate(Nav.Account)) }) }) {
+    val listState = rememberLazyListState()
+    var handledScrollRequest by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(scrollRequest) {
+        if (scrollRequest != handledScrollRequest) {
+            listState.scrollToItem(0)
+            handledScrollRequest = scrollRequest
+        }
+    }
+    ScreenScaffold("Inicio", modifier, subtitle = subtitle, listState = listState, actions = { AvatarButton(onClick = { send(HomeEvent.Navigate(Nav.Account)) }) }) {
         if (!state.connected && state.settings?.accountsBannerDismissed == false) {
             item(key = "accounts", contentType = "banner") { AccountsBanner(send) }
         }
