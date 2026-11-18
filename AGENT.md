@@ -335,3 +335,8 @@ Otros pendientes: PoToken propio como estrategia adicional, descarga por rangos 
     antes de filtrar. Una respuesta incompleta se trata como error. Si falla una lista o «Me gusta»,
     se conserva la copia local y se importan las demás colecciones. Para canciones difíciles se prueba
     una segunda búsqueda con el título normalizado y se mantiene el umbral de aceptación.
+
+59. **Inicio de sesión en Spotify**. «Iniciar sesión en Spotify» abre directamente el formulario del
+    servicio y utiliza la conexión web existente. Tras validar la sesión se encola una importación.
+    La conexión oficial con Client ID queda en las opciones avanzadas. El lector web solo se monta
+    tras pulsar el botón y se libera al salir.
