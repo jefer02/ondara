@@ -9,6 +9,7 @@ import app.ondara.core.model.CanvasState
 import app.ondara.core.model.CanvasSurfaces
 import app.ondara.core.model.PlayerState
 import app.ondara.core.model.UserSettings
+import app.ondara.core.model.VideoOffer
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ class PlayerSettingsViewModelTest {
         val canvas = mockk<CanvasController>(relaxed = true)
         every { canvas.state } returns MutableStateFlow<CanvasState>(CanvasState.Idle)
         every { canvas.surfaces } returns MutableStateFlow(CanvasSurfaces())
+        every { canvas.videoOffer } returns MutableStateFlow<VideoOffer?>(null)
         val selector = PlayerSettingsViewModel(repository, player)
         val opened = PlayerViewModel(player, mockk<LibraryRepository>(relaxed = true), canvas, repository)
         try {

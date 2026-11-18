@@ -47,6 +47,7 @@ class CinematicPlayerScreenshotTest(private val themeId: String, private val lay
             player = PlayerState(queue = listOf(song), currentIndex = 0, isPlaying = true, durationMs = 214_000,
                 context = PlaybackContext("Playlist", "Noches tranquilas")),
             canvas = CanvasState.None(song.id),
+            videoOffer = VideoOffer(song.id).takeIf { layout == PlayerLayout.CINEMATIC },
             // Sin tramado de vídeo: en Robolectric el RenderEffect AGSL del fondo se extiende a las capas
             // hermanas (texto y controles), algo que no ocurre en un dispositivo. El shader se cubre aparte.
             settings = UserSettings(playerLayout = layout.name, ditherVideo = false),
@@ -65,7 +66,11 @@ class CinematicPlayerScreenshotTest(private val themeId: String, private val lay
                         val shared = this
                         androidx.compose.animation.AnimatedVisibility(visible = true) {
                             FullPlayer(state, events::add, position, {}, {},
-                                LyricsSlots(full = { _, _ -> }, currentLine = {}, preview = {}), shared, this, androidx.compose.ui.Modifier, active = true)
+                                LyricsSlots(full = { _, _ -> }, currentLine = { modifier ->
+                                    androidx.compose.foundation.layout.Box(modifier, contentAlignment = androidx.compose.ui.Alignment.BottomStart) {
+                                        app.ondara.core.designsystem.component.Text("Y volvemos a cantar", style = OndaraTheme.type.lyric)
+                                    }
+                                }, preview = {}), shared, this, androidx.compose.ui.Modifier, active = true)
                         }
                     }
                 }
