@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import app.ondara.core.designsystem.component.*
 import app.ondara.core.designsystem.icon.OndaraIcons
@@ -42,11 +43,14 @@ internal fun CinematicPlayerLayout(
     var added by remember(song.id) { mutableStateOf(false) }
     var wave by remember { mutableStateOf(0L to 0L) }
     val haptics = rememberHaptics()
+    val gestures = rememberUpdatedState(onEvent)
+    val offer = state.videoOffer?.takeIf { it.songId == song.id }
+    val compact = LocalConfiguration.current.screenHeightDp.dp < spacing.touch * 10
     BackHandler(panel.isNotEmpty()) { panel = "" }
     Box(Modifier.fillMaxSize().background(colors.background).pointerInput(Unit) {
         detectTapGestures(onDoubleTap = {
             val delta = doubleTapDelta(it.x, size.width.toFloat())
-            onEvent(PlayerEvent.SeekBy(delta)); wave = System.nanoTime() to delta
+            gestures.value(PlayerEvent.SeekBy(delta)); wave = System.nanoTime() to delta
         })
     }) {
         Box(Modifier.fillMaxSize()) {
@@ -54,11 +58,14 @@ internal fun CinematicPlayerLayout(
                 state.canvas, state.canvasSurfaces, song.thumbnailUrl,
                 { slot, surface -> onEvent(PlayerEvent.CanvasSurface(slot, surface)) },
                 Modifier.fillMaxSize(),
-                dither = OndaraTheme.spec.ditherArtwork && state.settings.ditherVideo,
+                dither = offer?.enabled != true && OndaraTheme.spec.ditherArtwork && state.settings.ditherVideo,
             )
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
-                Color.Black.copy(alpha = .35f), Color.Transparent, Color.Black.copy(alpha = .88f),
-            ))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = .55f),
+                .25f to Color.Transparent,
+                .58f to Color.Black.copy(alpha = .58f),
+                1f to Color.Black.copy(alpha = .88f),
+            )))
             SeekWaves(wave)
         }
         PlayerDetails(song, lyrics, { panel = "Letra" }, onNavigate) {
@@ -69,12 +76,13 @@ internal fun CinematicPlayerLayout(
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.player.context?.let { "Reproduciendo desde ${it.type}" } ?: "Reproduciendo",
                             style = OndaraTheme.type.caption, color = Color.White, maxLines = 1)
-                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White)
+                        PlayerSingleLine(state.player.context?.title ?: song.album?.title.orEmpty(), OndaraTheme.type.bodyStrong, Color.White, centered = true)
                     }
                     OndaraIconButton(OndaraIcons.More, "Más opciones", { panel = "Menú" }, tint = Color.White)
                 }
                 Spacer(Modifier.weight(1f).fillMaxWidth())
-                CinematicLyricBox(lyrics.currentLine)
+                if (!compact) CinematicLyricBox(lyrics.currentLine)
+                if (offer != null) VideoSwitch(offer.enabled, { onEvent(PlayerEvent.ToggleVideo) }, Modifier.align(Alignment.CenterHorizontally))
                 Row(Modifier.fillMaxWidth().padding(top = spacing.md), verticalAlignment = Alignment.CenterVertically) {
                     Artwork(song.thumbnailUrl, Modifier.size(spacing.touch), playing = true)
                     with(sharedScope) {
@@ -90,9 +98,11 @@ internal fun CinematicPlayerLayout(
                     PlayerTransport(state.player, onEvent,
                         Modifier.sharedBounds(rememberSharedContentState(KEY_PLAY), visibilityScope), Color.White, light = true)
                 }
-                PlayerScrollHint(Color.White)
-                PlayerBottomActions(song, { panel = it }, Color.White)
-                Spacer(Modifier.height(spacing.lg))
+                if (!compact) {
+                    PlayerScrollHint(Color.White)
+                    PlayerBottomActions(song, { panel = it }, Color.White)
+                    Spacer(Modifier.height(spacing.lg))
+                }
             }
         }
         if (panel == "Cola") QueuePanel(state.player, onEvent) { panel = "" }
@@ -101,6 +111,22 @@ internal fun CinematicPlayerLayout(
     if (panel == "Temporizador") PlayerTimer(state.player, onEvent) { panel = "" }
     if (panel == "Menú") SongMenuSheet(song, { panel = "" }, { onNavigate(Nav.Artist(it)) }, { onNavigate(Nav.Album(it)) })
     if (panel == "Playlist") PlayerPlaylistPicker(song, { panel = "" }, onAdded = { added = true; haptics.confirm(); panel = "" })
+}
+
+@Composable
+private fun VideoSwitch(video: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier.heightIn(min = OndaraTheme.spacing.touch).pressable(haptic = true, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(shape = OndaraTheme.shapes.control, color = Color.Black.copy(alpha = .68f), contentColor = Color.White, hairline = false) {
+            Text(
+                if (video) "Cambiar a audio" else "Cambiar a video",
+                Modifier.padding(horizontal = OndaraTheme.spacing.lg, vertical = OndaraTheme.spacing.sm),
+                style = OndaraTheme.type.bodyStrong,
+            )
+        }
+    }
 }
 
 @Composable

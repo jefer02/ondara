@@ -20,10 +20,7 @@ class YouTubeCanvasProvider(
     /** O(r log r) candidatos; cálculo del clip O(n) líneas. */
     override suspend fun resolve(song: Song): CanvasResult? {
         if (!allowed()) return null
-        val hits = resolver.searchVideos("${song.title} ${song.artistLine}")
-            .filter { canvasArtistMatches(song, it.author) }
-            .map { it to VideoSearchScore.score(song, it) }.filter { it.second > 0 }.sortedByDescending { it.second }
-        val ids = (hits.map { it.first.videoId } + song.id).distinct()
+        val ids = (officialVideoIds(resolver, song) + song.id).distinct()
         for (id in ids) {
             val video = resolver.resolveVideo(id)?.takeIf { it.hasVideo && !it.isArtTrack && it.durationSec > 0 } ?: continue
             if (id == song.id && !canvasArtistMatches(song, video.author.orEmpty())) continue
@@ -38,6 +35,31 @@ class YouTubeCanvasProvider(
         }
         return null
     }
+}
+
+/** O(r log r) para ordenar los candidatos por equivalencia con la pista. */
+private suspend fun officialVideoIds(resolver: StreamResolver, song: Song): List<String> =
+    resolver.searchVideos("${song.title} ${song.artistLine}")
+        .filter { canvasArtistMatches(song, it.author) }
+        .map { it to VideoSearchScore.score(song, it) }
+        .filter { it.second > 0 }
+        .sortedByDescending { it.second }
+        .map { it.first.videoId }
+
+internal data class FullVideo(val canvas: Canvas, val videoId: String, val expiresAtMs: Long)
+
+internal suspend fun resolveFullVideo(resolver: StreamResolver, song: Song): FullVideo? {
+    suspend fun resolve(id: String): FullVideo? {
+        val video = resolver.resolveVideo(id)?.takeUnless { it.isArtTrack } ?: return null
+        val stream = video.fullVideo ?: listOfNotNull(video.videoOnly, video.muxed)
+            .filter { it.height >= 720 }.maxByOrNull { it.height } ?: return null
+        return FullVideo(
+            Canvas(song.id, stream.url, CanvasSource.YOUTUBE_VIDEO, width = stream.width, height = stream.height),
+            id, video.expiresAtMs,
+        )
+    }
+    return resolve(song.id) ?: officialVideoIds(resolver, song).asSequence().distinct().filter { it != song.id }
+        .firstNotNullOfOrNull { resolve(it) }
 }
 
 object VideoSearchScore {
